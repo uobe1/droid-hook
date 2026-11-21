@@ -3,6 +3,8 @@
 本文件记录 `droid_hook.ko` 在真实 Android 设备上通过 **ksud** 加载、执行
 `selftest=1`、卸载并确认无残留的证据。只以设备命令原文 / dmesg 原文为准。
 
+**这是本项目首次在 beryl 设备上真实 `insmod` / `rmmod` 成功。**
+
 ## 环境
 
 | 项 | 值 |
@@ -12,6 +14,7 @@
 | 提权方式 | `su -c '<cmd>'` → `uid=0(root) ... context=u:r:ksu:s0`, `su_rc=0` |
 | ksud | `/data/adb/ksu/bin/ksud -> /data/adb/ksud` (该版本只有 `insmod`, **没有 `rmmod`**) |
 | 卸载工具 | `/system/bin/rmmod -> toybox` (`Toybox 0.8.12-android`) |
+| 设备已有 core | `dnsk_core 73728 0`; `/proc/dnsk/status`: `dnsk_core abi=3` (与适配层的 ABI 5 不一致, 见 [real-core-routing-plan](./real-core-routing-plan.md)) |
 
 ## 产物
 

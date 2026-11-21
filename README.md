@@ -18,7 +18,7 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
 | 内核语法代理 `make kcheck` | 6 个库层 TU 全 ok |
 | 内核模块构建 | **已验证**: CI DDK run `44875690763` 产出 `droid_hook.ko` (290216 B, `modinfo -F name`=`droid_hook`, vermagic `6.12.76-4k SMP preempt mod_unload modversions aarch64`), artifact `droid-hook-android16-6.12`; 同 commit 还有一次未记录的成功 run `44876857725` |
 | QEMU 门控 | **已验证**: run `44911364668` (head `0bbca25`), `image` 1m17s + `boot` 16s; 串口 `DH_SELFTEST_OK` + `DH_SELFTEST_RUNTIME_OK` + `CHUNKS=3`, `lsmod` 计数 0, 无 sysfs/kallsyms 残留, 失败签名零匹配 |
-| 真机加载/卸载 | **已验证 (2026-11-21)**: `ksud insmod … selftest=1` → `DH_SELFTEST_OK`, `/system/bin/rmmod` → `lsmod` 0、sysfs 无残留、告警扫描 0; 设备 6.12.30-android16, 加载的 317712B 产物无 runtime marker. 证据: [device-gate-2026-11-21](./docs/evidence/device-gate-2026-11-21.md) |
+| 真机加载/卸载 | **已验证 (2026-11-21, 本项目首次在 beryl 上真实 insmod/rmmod)**: `ksud insmod … selftest=1` → `DH_SELFTEST_OK`; 该 ksud 无 `rmmod` 子命令, 用 `/system/bin/rmmod`(toybox) → `lsmod` 0、sysfs 无残留、告警扫描 0; 设备 6.12.30-android16, 加载的 317712B 产物无 runtime marker. 证据: [device-gate-2026-11-21](./docs/evidence/device-gate-2026-11-21.md) |
 | runtime 层内核构建 | **已验证**: build run `44910310411` 的 `nm` 4 符号; qemu run `44911364668` 执行分割/恢复/回滚自检 (**mock core**, 不等于真实 core 路由) |
 
 ### 已验证 / 未验证
@@ -72,6 +72,9 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
 
 **未验证 / 已知边界**
 
+- 设备现有 `dnsk_core` 为 **ABI 3**, 而适配层按 ABI 5 编译; 真 core 路由当前阻塞于
+  ABI 5 core 部署. 方案与风险见
+  [real-core-routing-plan](./docs/evidence/real-core-routing-plan.md)
 - 真机加载的是 317712B 旧产物 (构建于 runtime selftest 之前), 只有 `DH_SELFTEST_OK`;
   **runtime 分割/恢复自检未在真机执行** (仅 QEMU mock core)
 - runtime 适配层的真实 core ABI 5 路由、真实 quiesce 窗口仍未验证
