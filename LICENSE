@@ -1,0 +1,4 @@
+This project is licensed under the GNU General Public License v2.0 only.
+See https://www.gnu.org/licenses/old-licenses/gpl-2.0.html for the full text.
+
+Host-side test files under tests/ carry SPDX GPL-3.0-or-later in their headers.
