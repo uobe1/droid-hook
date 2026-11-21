@@ -32,6 +32,21 @@
 - `44876857725` 是当时漏记的一次重复门控 (同一 commit `fcaff43`, 无代码差异), 2026-11-21
   补记; 它不改变结论, 但说明该 workflow 可重复通过.
 
+## runtime 接入后的模块门控 (2026-11-21 下午)
+
+变更集: `447cded` Add QEMU load gate and wire runtime/ into the module build
+
+| run id | headSha | conclusion | 失败/通过点 |
+|---|---|---|---|
+| `44908866295` | `447cded` | **failure** | host 8s 通过; `Build droid_hook.ko` 通过; 新增 `Build with runtime adapter` 以 curl 404 失败 |
+
+- 失败原因: 工作流 pin 的 commit `2828828` 只在本地分支, 未推到 public 远端; raw URL 404.
+  public `main` 的 `dnsk_core.h` 仍是 ABI 2, 不能拿来冒充 ABI 5.
+- 修复: 在 public 远端扫描, 找到 `f6d325be` (`origin/feat/control-plane-iteration`) 的
+  `core/include/dnsk_core.h` 与本地 ABI 5 头字节一致 (sha256
+  `7b4fb703…a01a21`, 已用 raw URL 实测), 改为 pin 该 commit; 头摘要断言不变.
+- 这是同一变更集的第 1 次失败, 按纪律修好后仅重试 1 次.
+
 - 成功 run 总墙钟: 约 **1 分 29 秒** (06:28:18Z → 06:29:47Z)。
 - artifact: **`droid-hook-android16-6.12`**, 134772 B (上传自 `out/`)。
 - 产物: `droid_hook.ko` **290216 B**。
