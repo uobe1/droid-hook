@@ -1,10 +1,41 @@
 # Droid-Hook
 
-状态: **库层 + 运行时适配 + preflight/probe 已实现, host 侧 90 项单测通过; 已加入
-Kbuild/Makefile 内核模块构建入口与 `build.yml` 的 DDK 构建, 本机用 `make kcheck` 代理验证;
-尚未由 CI 实际构建, 未 QEMU/真机门控**.
-Droid-Hook 为独立仓库 (`/root/droid-hook`), 不进 droid-lkm-suite 的 `features/*/Kbuild`,
-不改变其产物清单, 也不影响任何现有 LKM 的行为.
+状态: **库层 + 运行时适配 + preflight/probe 已实现; host 侧 90 项单测通过; `droid_hook.ko`
+已在 CI 的 DDK 镜像中真实构建成功 (run `44875690763`, head `f4e952f`); 未做 QEMU / 真机门控**.
+
+Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认分支 `main`),
+不进 droid-lkm-suite 的 `features/*/Kbuild`, 不改变其产物清单, 也不影响任何现有 LKM 的行为.
+
+## 当前状态
+
+| 项 | 状态 |
+|---|---|
+| 仓库 | https://github.com/uobe1/droid-hook (public, 默认分支 `main`) |
+| host 门禁 `make check` | 90 项 / 6 suites / 7 TUs 全绿 |
+| 内核语法代理 `make kcheck` | 6 个库层 TU 全 ok |
+| 内核模块构建 | **已验证**: CI DDK run `44875690763` 产出 `droid_hook.ko` (290216 B, `modinfo -F name`=`droid_hook`, vermagic `6.12.76-4k SMP preempt mod_unload modversions aarch64`), artifact `droid-hook-android16-6.12` |
+| QEMU 门控 | 未做 |
+| 真机加载/卸载 | 未做 |
+| runtime 层内核构建 | 未做 (`runtime/` 需 core 头, 不在本模块 Kbuild 内) |
+
+### 已验证 / 未验证
+
+**已验证 (有 run id / 日志为证)**
+
+- `make check` 90 项全绿、`make kcheck` 6 TU 全 ok (本地)
+- CI DDK 真实构建 `droid_hook.ko`: run `44875690763`, head `f4e952f`, host job 11s +
+  build job 1m11s (总墙钟 06:28:18Z→06:29:47Z), `modinfo -F name`=`droid_hook`,
+  vermagic `6.12.76-4k SMP preempt mod_unload modversions aarch64`, artifact 134772 B.
+  证据: [build-gate-2026-11-21](./docs/evidence/build-gate-2026-11-21.md)
+- 首次 run `44875487955` 真实失败 (clang `-Wframe-larger-than`: `init_module` 栈帧 2416 > 2048),
+  修复后重派成功. 这说明 CI 真的编译了 `dh_module.c`, 不是走过场.
+
+**仅配置就绪 / 未验证**
+
+- `dh_module.c` 的运行时自检 (`selftest=1`) 从未在 CI 中加载执行 (CI 只编译不 insmod);
+  其行为仅由源码与 host 侧等价 backend 推断, 未在真实内核里跑过
+- `runtime/` 的内核构建方式未提供 (它需要 droid-lkm-suite core 头)
+- QEMU 门控、真机 `insmod`/`rmmod`、崩溃/告警扫描均未做
 
 ## 这是什么
 
@@ -63,20 +94,20 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
 当前只探测 `DH_ROUTE_FIXMAP`, 因为 ABI 5 适配层目前只真正实现 `F_RO -> patch_map` 这一条
 (ALIAS/PTE/DMA 仍是契约占位); 待适配层区分更多路由后, 这里应改为按优先级依次探测.
 
-### 只能由 CI 的 DDK 构建验证的部分
+### CI 的 DDK 构建验证 (已完成)
 
-本机无内核构建树, 以下只能由 `.github/workflows/build.yml` 的 DDK job 验证:
+本机无内核构建树, 以下由 `.github/workflows/build.yml` 的 DDK job 验证 (run `44875690763` 通过):
 - `dh_module.c` 在真实内核头下编译(依赖 `<linux/module.h>` 与生成的 `<asm/*>` 头)
-- `Kbuild` 组合出 `droid_hook.ko`, 且 `obj-m`/`droid_hook-y` 列表、`-I$(src)/include` 正确
+- `Kbuild` 组合出 `droid_hook.ko` (`LD [M] droid_hook.ko` + BTF), 且 `obj-m`/`droid_hook-y`
+  列表、`-I$(src)/include` 正确
 - `modinfo -F name` 为 `droid_hook` 且带合法 vermagic (`build.yml` 内为硬断言, 无 `|| true`)
 
 本机只能用 `make kcheck` 代理证明库层 TU 内核干净; 它不覆盖 `dh_module.c` 与链接/打包.
 
 ## 明确未做(不要误读为已完成)
 
-- `Kbuild` / `make module` / `build.yml` 的 DDK 构建入口已就绪, 但本机无内核构建树,
-  `dh_module.c` 与最终 `droid_hook.ko` **只能由 CI 的 DDK 构建验证**; 本轮未实际 dispatch
-  运行 CI, 因此不得声称"已构建/可加载". **没有 QEMU 门控, 没有真机加载**
+- `dh_module.c` 与 `droid_hook.ko` 已由 CI DDK 构建验证 (run `44875690763`); 但 CI **只编译不加载**,
+  运行时自检未执行; 且 **没有 QEMU 门控, 没有真机加载/卸载**
 - 4 条 RO 写入路由(ALIAS / PTE / FIXMAP / DMA)目前只有 `FIXMAP` 经 core 的
   `F_RO` 后端真实存在; 其余三条是契约占位, 适配层尚未区分
 - `dh_insn` 的成对重编码是内部助手 + `dh_scan_refs` 的 fail-closed 预检,
