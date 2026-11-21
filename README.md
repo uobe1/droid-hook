@@ -1,7 +1,10 @@
 # Droid-Hook
 
-状态: **库层 + 运行时适配已实现, host 侧 75 项单测通过, 未接入内核构建, 未门控**.
-本目录不进任何 `features/*/Kbuild`, 不改变 `ci-fast` 的产物清单, 也不影响任何现有 LKM 的行为.
+状态: **库层 + 运行时适配 + preflight/probe 已实现, host 侧 90 项单测通过; 已加入
+Kbuild/Makefile 内核模块构建入口与 `build.yml` 的 DDK 构建, 本机用 `make kcheck` 代理验证;
+尚未由 CI 实际构建, 未 QEMU/真机门控**.
+Droid-Hook 为独立仓库 (`/root/droid-hook`), 不进 droid-lkm-suite 的 `features/*/Kbuild`,
+不改变其产物清单, 也不影响任何现有 LKM 的行为.
 
 ## 这是什么
 
@@ -27,6 +30,7 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
 | `src/dh_insn.c` | arm64 编码与引用重定位 | 绝对跳转 `LDR X17,#8; BR X17;<literal>`; ADRP/ADR/B/BL/B.cond/CBZ/TBZ/LDR literal 重编码; 成对 ADRP+ADD/LDR 重定位(fail-closed); ±4GiB 与 ±1MiB 范围检查 |
 | `src/dh_hook.c` | 函数级 trampoline | 覆盖前 4 条指令 + relo 区 + 跳回第 5 条; key 与 target 双重唯一; 地址仲裁; before 正序 / after 逆序 / skip_origin; 卸载逆序且在 quiesce 窗口内 |
 | `src/dh_shadow.c` | `<obj,id>` 侧表 | 不改父对象 layout; get-or-alloc 幂等; 延迟回收至最后一个引用 |
+| `src/dh_preflight.c` | 预检与保护探测 | `dh_preflight` 校验 ctx/backend/abi/未决事务; `dh_probe_protection` 以同字节写 + 读回校验探测 RO 路由, 读/写/校验失败原样返回真实 errno |
 | `runtime/dh_core_backend.c` | ABI 5 适配 | `rw`/`patch_pointer`/`resolve` 映射; magic/abi 校验; `F_TEXT`/`F_RO` 走会睡眠的 patch 后端; 数据路径 `flags=0` 不进 stop_machine |
 
 ### 指令编码的两个实证结论
@@ -40,15 +44,39 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
 
 ## 验证
 
-- 6 个 TU 在生产参数(`-std=c11 -Wall -Wextra -Werror`, 不含测试 seam)下零 warning 编译
-- 5 套 host 单测共 **75 项**: contract 6 / rw+txn 12 / insn 19 / hook 19 / runtime 19
-- 关键断言做过变异验证(故意改坏实现, 测试必须失败): hook 侧 4 个变异全部被捕获,
-  insn 侧 2 个变异(掩码回退、删除范围检查)全部被捕获, 证明断言不是空转
+- `make check` 全绿: 库层 TU 以生产参数(`-std=c11 -Wall -Wextra -Werror`)零 warning 编译,
+  6 套 host 单测共 **90 项**: contract 6 / rw+txn 12 / insn 19 / hook 19 / preflight 10 / runtime 24
+- `make kcheck` 全绿: 6 个库层 TU 在 `-D__KERNEL__` 下用 AOSP 头
+  (`/usr/local/share/aosp-6.12.30`)逐个语法编译通过, 证明库层不偷用 libc 头
+- 关键断言做过变异验证(故意改坏实现 → 测试必须失败 → 还原后 `cmp` 字节一致):
+  hook 侧 4 个、insn 侧 2 个, 以及本轮 preflight 的 5 个变异(去掉 busy 守卫、跳过读回校验、
+  `ro_write` 失败却假成功、吞掉读错误、忽略 `initialized`)全部被捕获, 证明断言不是空转
 - 测试 seam `-DDH_INS_TEST_SEAM` 只在测试构建定义; 生产目标文件已用 `nm` 确认不含该符号
+
+### preflight 与保护探测的设计取舍
+
+`dh_probe_protection` 用"以同字节写一次再读回"来验证 RO 写路由: 写回的正是刚从同一地址读到
+的字节, 成功时目标内容与指令流完全不变, 唯一可观测结果是该路由确实接受了写入; 若路由写坏,
+读回不一致会返回 `DH_E_VERIFY` 而非假成功; 若路由拒绝, 返回其真实 errno. 因此它既安全
+(幂等、不改状态)又诚实(不伪造 `DH_OK`), 读失败/写失败/校验失败都原样向上传播.
+
+当前只探测 `DH_ROUTE_FIXMAP`, 因为 ABI 5 适配层目前只真正实现 `F_RO -> patch_map` 这一条
+(ALIAS/PTE/DMA 仍是契约占位); 待适配层区分更多路由后, 这里应改为按优先级依次探测.
+
+### 只能由 CI 的 DDK 构建验证的部分
+
+本机无内核构建树, 以下只能由 `.github/workflows/build.yml` 的 DDK job 验证:
+- `dh_module.c` 在真实内核头下编译(依赖 `<linux/module.h>` 与生成的 `<asm/*>` 头)
+- `Kbuild` 组合出 `droid_hook.ko`, 且 `obj-m`/`droid_hook-y` 列表、`-I$(src)/include` 正确
+- `modinfo -F name` 为 `droid_hook` 且带合法 vermagic (`build.yml` 内为硬断言, 无 `|| true`)
+
+本机只能用 `make kcheck` 代理证明库层 TU 内核干净; 它不覆盖 `dh_module.c` 与链接/打包.
 
 ## 明确未做(不要误读为已完成)
 
-- 没有 `Kbuild`, 没有内核模块编译, **没有 QEMU 门控, 没有真机加载**
+- `Kbuild` / `make module` / `build.yml` 的 DDK 构建入口已就绪, 但本机无内核构建树,
+  `dh_module.c` 与最终 `droid_hook.ko` **只能由 CI 的 DDK 构建验证**; 本轮未实际 dispatch
+  运行 CI, 因此不得声称"已构建/可加载". **没有 QEMU 门控, 没有真机加载**
 - 4 条 RO 写入路由(ALIAS / PTE / FIXMAP / DMA)目前只有 `FIXMAP` 经 core 的
   `F_RO` 后端真实存在; 其余三条是契约占位, 适配层尚未区分
 - `dh_insn` 的成对重编码是内部助手 + `dh_scan_refs` 的 fail-closed 预检,
@@ -76,10 +104,13 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
 ## 本地验证
 
 ```sh
-make check                  # 顶层, 含本目录的 host 统一门禁
-make -C droid-hook check    # 只跑本目录: 逐个编译每个 TU + 全部 host 单测
-make -C droid-hook clean
+make check          # 编译每个库层 TU(host 参数) + 跑全部 host 单测
+make kcheck         # 用 AOSP 头在 -D__KERNEL__ 下逐 TU 语法检查(无内核树时最强代理)
+make module         # 需要 KDIR 指向已准备的内核树; 本机没有, 只能在 CI/DDK 跑
+make clean
 ```
 
-`droid-hook/Makefile` 是 host 侧编译门禁, 不是内核模块构建: 每个 `.c` 单独
-`-c` 过类型检查, 不链接(各 harness 自带 stub, 全链接会混用冲突 stub).
+`make check` / `make kcheck` 是本机能做到的全部验证. `dh_module.c` 依赖
+`<asm/cpucap-defs.h>` 等生成头, 只能由真实内核构建(`build.yml` 的 DDK 镜像)编译验证.
+`Kbuild` 只把库层 `src/*.c` 与 `dh_module.c` 打进 `droid_hook.ko`; `runtime/` 需要 core 头,
+按需另行构建, 不属本模块.

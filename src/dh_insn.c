@@ -15,8 +15,18 @@
 
 #include "dh.h"
 
+/* The kernel provides size_t from <linux/types.h> (pulled in by dh.h) and has
+ * no <stdint.h>; the host branch needs both.  Guarding here keeps the same
+ * source compiling as a module and as a host TU. */
+#ifdef __KERNEL__
+#include <linux/compiler.h>
+#else
 #include <stddef.h>
 #include <stdint.h>
+/* READ_ONCE is a kernel macro; the host needs the same "one volatile read"
+ * semantics without pulling kernel headers. */
+#define READ_ONCE(x) (*(const volatile __typeof__(x) *)&(x))
+#endif
 
 /* dh.h's host branch provides u8/u16/u32/u64 but not s64; the kernel branch
  * gets s64 from <linux/types.h>.  This is a dh.h contract gap that should be

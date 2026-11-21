@@ -4,3 +4,11 @@ build/
 *.so
 __pycache__/
 *.pyc
+*.ko
+*.mod
+*.mod.c
+*.symvers
+Module.symvers
+modules.order
+.*.cmd
+.tmp_versions/

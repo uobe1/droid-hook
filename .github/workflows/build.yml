@@ -1,0 +1,57 @@
+name: build
+
+# Dispatch-only, like the sibling projects: a push must not silently consume an
+# Action, and the same gate must not run twice.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: droid-hook-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Cheap gate first: host suites.  No DDK image, no kernel tree.  The library
+  # TUs' kernel-mode syntax check (`make kcheck`) needs the AOSP headers, so it
+  # runs locally; in CI the real kernel build below is strictly stronger.
+  host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host suites
+        run: make check
+
+  # Real kernel module build.  This is what proves droid_hook.ko compiles
+  # against the android16-6.12 GKI kernel the device runs.
+  build:
+    needs: host
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ylarod/ddk-min:android16-6.12-20260828
+      options: --user root
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build droid_hook.ko
+        shell: bash
+        run: |
+          set -euxo pipefail
+          KDIR="/opt/ddk/kdir/android16-6.12"
+          make -C "$KDIR" M="$GITHUB_WORKSPACE" modules
+          mkdir -p out
+          cp droid_hook.ko out/
+          # Real assertions: the module must exist, carry the right name and a
+          # vermagic.  No `|| true` here -- a missing/incorrect .ko must fail.
+          test -s out/droid_hook.ko
+          modinfo -F name out/droid_hook.ko | grep -qx droid_hook
+          modinfo -F vermagic out/droid_hook.ko
+          ls -l out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: droid-hook-android16-6.12
+          path: out/
+          if-no-files-found: error
