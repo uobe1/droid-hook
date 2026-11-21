@@ -23,6 +23,7 @@
 #ifdef DH_WITH_RUNTIME
 #include <linux/err.h>
 #include <linux/errno.h>
+#include <linux/kprobes.h>
 #include <linux/mm.h>
 #include "dh_core_backend.h"
 #endif
@@ -449,7 +450,6 @@ static int dh_core_bind(void)
 	typedef struct dnsk_core_api *(*core_get_fn)(u16, u16);
 	struct dnsk_core_api *api;
 	core_get_fn get;
-	void *sym;
 	void *jiffies;
 	u64 j1 = 0, j2 = 0;
 	u64 want = 0x1122334455667788ULL;
@@ -459,17 +459,23 @@ static int dh_core_bind(void)
 	if (!require_core)
 		return 0;
 
-	/* symbol_get keeps the build free of a hard dnsk_core_get link
-	 * dependency; if core is absent this fails closed instead of loading a
-	 * module that silently claims routing works. */
-	sym = symbol_get("dnsk_core_get");
-	if (sym == NULL) {
-		pr_err("DH_SELFTEST_FAIL:core_get_missing\n");
-		return -ENOENT;
+	/* __symbol_get() only searches the builtin __ksymtab (Linux 6.12
+	 * kernel/module/main.c:1314-1338), so a module-exported symbol must be
+	 * resolved through kallsyms; register_kprobe does that for us and is
+	 * available because CONFIG_KPROBES=y.  Missing core still fails closed. */
+	{
+		struct kprobe kp = { .symbol_name = "dnsk_core_get" };
+
+		ret = register_kprobe(&kp);
+		if (ret != 0) {
+			pr_err("DH_CORE_GET=err:%d (kprobe)\n", ret);
+			pr_err("DH_SELFTEST_FAIL:core_get_missing\n");
+			return ret;
+		}
+		get = (core_get_fn)kp.addr;
+		unregister_kprobe(&kp);
 	}
-	get = (core_get_fn)sym;
 	api = get(DNSK_CORE_ABI, (u16)sizeof(struct dnsk_core_api));
-	symbol_put("dnsk_core_get");
 	if (IS_ERR(api)) {
 		ret = (int)PTR_ERR(api);
 		pr_err("DH_CORE_GET=err:%d\n", ret);
