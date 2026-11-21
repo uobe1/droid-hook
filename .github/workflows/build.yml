@@ -50,6 +50,32 @@ jobs:
           modinfo -F name out/droid_hook.ko | grep -qx droid_hook
           modinfo -F vermagic out/droid_hook.ko
           ls -l out
+      - name: Build with runtime adapter (core ABI 5 header)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          KDIR="/opt/ddk/kdir/android16-6.12"
+          # Pin both the commit and the header digest: the runtime adapter must
+          # compile against exactly the core ABI 5 header it was written for.
+          CORE_INC="/tmp/dh-core-include"
+          mkdir -p "$CORE_INC"
+          CORE_URL="https://raw.githubusercontent.com/uobe1/droid-lkm-suite/2828828619cc9284bb84eb5ff03dac040fe5ca95/core/include/dnsk_core.h"
+          curl -fsSL --retry 5 --retry-delay 2 -o "$CORE_INC/dnsk_core.h" "$CORE_URL"
+          echo "7b4fb703bb8c99974e605bc2bf3fecaeae0e5c17a8ee9af5924dcfa0cae01a21  $CORE_INC/dnsk_core.h" | sha256sum -c -
+          cp out/droid_hook.ko out/droid_hook-plain.ko
+          make -C "$KDIR" M="$GITHUB_WORKSPACE" clean
+          make -C "$KDIR" M="$GITHUB_WORKSPACE" DNSK_CORE_INC="$CORE_INC" modules
+          cp droid_hook.ko out/droid_hook-runtime.ko
+          # Hard assertions: the runtime TU must be linked into the second
+          # module and must be absent from the plain one.
+          NM=$(command -v llvm-nm || command -v nm)
+          "$NM" out/droid_hook-runtime.ko | grep -Eq ' [Tt] dh_core_backend_init$'
+          if "$NM" out/droid_hook-plain.ko | grep -Eq ' [Tt] dh_core_backend_init$'; then
+            echo "plain module unexpectedly contains the runtime adapter" >&2
+            exit 1
+          fi
+          modinfo -F name out/droid_hook-runtime.ko | grep -qx droid_hook
+          ls -l out
       - uses: actions/upload-artifact@v4
         with:
           name: droid-hook-android16-6.12

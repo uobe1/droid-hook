@@ -5,14 +5,13 @@
 #   obj-m := droid_hook.o
 #
 # The module is the library plus packaging: src/ (kernel-agnostic library) and
-# dh_module.c (module_init/exit, exports, self-test).  runtime/ is NOT part of
-# this module: the core RW ABI adapter needs the droid-lkm-suite core headers,
-# so it is built separately with DNSK_CORE_INC pointing at them (see Makefile).
+# dh_module.c (module_init/exit, exports, self-test).  runtime/ is the optional
+# core RW ABI 5 adapter: it needs the droid-lkm-suite core headers, so it is
+# compiled in only when DNSK_CORE_INC points at a directory containing
+# dnsk_core.h.  Without it the module still builds as library + packaging.
 #
 #   make -C <kernel tree> M=$PWD modules
-#
-# This Kbuild only packages the library TUs and dh_module.c; it does not build
-# runtime/ and does not read DNSK_CORE_INC.
+#   make -C <kernel tree> M=$PWD DNSK_CORE_INC=<core>/include modules
 
 obj-m := droid_hook.o
 
@@ -24,6 +23,20 @@ droid_hook-y := \
 	src/dh_shadow.o \
 	src/dh_preflight.o \
 	dh_module.o
+
+# Fail closed on a wrong path: a non-empty DNSK_CORE_INC that does not contain
+# dnsk_core.h is a configuration error, not a silent downgrade to a build
+# without the runtime adapter.
+RUNTIME_CORE_HDR := $(wildcard $(DNSK_CORE_INC)/dnsk_core.h)
+ifneq ($(strip $(RUNTIME_CORE_HDR)),)
+droid_hook-y += runtime/dh_core_backend.o
+ccflags-y += -I$(DNSK_CORE_INC) -I$(src)/runtime
+$(info droid-hook: DNSK_CORE_INC set -> runtime/dh_core_backend.o included)
+else ifneq ($(strip $(DNSK_CORE_INC)),)
+$(error droid-hook: DNSK_CORE_INC="$(DNSK_CORE_INC)" contains no dnsk_core.h)
+else
+$(info droid-hook: DNSK_CORE_INC unset -> runtime/dh_core_backend.o skipped)
+endif
 
 ccflags-y += -I$(src)/include
 ccflags-y += -Wno-declaration-after-statement

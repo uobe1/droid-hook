@@ -29,7 +29,14 @@ KDIR     ?= /lib/modules/$(shell uname -r)/build
 AOSP     ?= /usr/local/share/aosp-6.12.30
 LIB_SRCS := $(sort $(wildcard src/*.c))
 
-.PHONY: all check compile test kcheck module module-clean clean
+# Optional path to droid-lkm-suite's core headers, e.g.
+#   DNSK_CORE_INC=/path/to/droid-lkm-suite/core/include
+# When set, the runtime adapter (runtime/dh_core_backend.c) is compiled into
+# droid_hook.ko; when empty it is skipped and the module is library +
+# packaging only.  Kbuild rejects a non-empty path without dnsk_core.h.
+DNSK_CORE_INC ?=
+
+.PHONY: all check compile test kcheck module module-clean runtime-check clean
 
 all: check
 
@@ -59,10 +66,25 @@ kcheck:
 	done
 
 module:
-	$(MAKE) -C "$(KDIR)" M="$(CURDIR)" modules
+	$(MAKE) -C "$(KDIR)" M="$(CURDIR)" DNSK_CORE_INC="$(DNSK_CORE_INC)" modules
 
 module-clean:
 	$(MAKE) -C "$(KDIR)" M="$(CURDIR)" clean
+
+# Kernel-mode syntax check of the runtime adapter against the real core
+# header: the strongest check possible without a prepared kernel tree.  It
+# proves runtime/dh_core_backend.c includes <dnsk_core.h> cleanly under
+# -D__KERNEL__ and does not leak libc headers.
+runtime-check:
+	@test -n "$(DNSK_CORE_INC)" || { \
+		echo "runtime-check: DNSK_CORE_INC is required, e.g. DNSK_CORE_INC=/path/to/droid-lkm-suite/core/include" >&2; \
+		exit 1; }
+	@test -f "$(DNSK_CORE_INC)/dnsk_core.h" || { \
+		echo "runtime-check: $(DNSK_CORE_INC)/dnsk_core.h not found" >&2; exit 1; }
+	$(CC) -std=gnu11 -D__KERNEL__ -fsyntax-only -Iinclude -Iruntime \
+		-I$(DNSK_CORE_INC) -I$(AOSP)/include -I$(AOSP)/arch/arm64/include \
+		runtime/dh_core_backend.c
+	@echo "runtime-check: runtime/dh_core_backend.c ok against $(DNSK_CORE_INC)"
 
 clean:
 	rm -rf $(BUILDD)

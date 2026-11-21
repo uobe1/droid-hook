@@ -1,7 +1,8 @@
 # Droid-Hook
 
 状态: **库层 + 运行时适配 + preflight/probe 已实现; host 侧 90 项单测通过; `droid_hook.ko`
-已在 CI 的 DDK 镜像中真实构建成功 (run `44875690763`, head `f4e952f`); 未做 QEMU / 真机门控**.
+已在 CI 的 DDK 镜像中真实构建成功; QEMU 加载门控 (`qemu-gate.yml`) 与 runtime 内核构建
+(`DNSK_CORE_INC`) 已落地, 首次 run 待派发**.
 
 Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认分支 `main`),
 不进 droid-lkm-suite 的 `features/*/Kbuild`, 不改变其产物清单, 也不影响任何现有 LKM 的行为.
@@ -13,10 +14,10 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
 | 仓库 | https://github.com/uobe1/droid-hook (public, 默认分支 `main`) |
 | host 门禁 `make check` | 90 项 / 6 suites / 7 TUs 全绿 |
 | 内核语法代理 `make kcheck` | 6 个库层 TU 全 ok |
-| 内核模块构建 | **已验证**: CI DDK run `44875690763` 产出 `droid_hook.ko` (290216 B, `modinfo -F name`=`droid_hook`, vermagic `6.12.76-4k SMP preempt mod_unload modversions aarch64`), artifact `droid-hook-android16-6.12` |
-| QEMU 门控 | 未做 |
+| 内核模块构建 | **已验证**: CI DDK run `44875690763` 产出 `droid_hook.ko` (290216 B, `modinfo -F name`=`droid_hook`, vermagic `6.12.76-4k SMP preempt mod_unload modversions aarch64`), artifact `droid-hook-android16-6.12`; 同 commit 还有一次未记录的成功 run `44876857725` |
+| QEMU 门控 | 已配置 `.github/workflows/qemu-gate.yml` (`insmod selftest=1` → `DH_SELFTEST_OK` → `rmmod` → 无残留), 首次 run 待派发 |
 | 真机加载/卸载 | 未做 |
-| runtime 层内核构建 | 未做 (`runtime/` 需 core 头, 不在本模块 Kbuild 内) |
+| runtime 层内核构建 | 已接入 `DNSK_CORE_INC` (`runtime/dh_core_backend.o` 按 core 头存在与否编入模块); 本机 `make runtime-check` 对真实 core 头通过; CI 链接验证待 run |
 
 ### 已验证 / 未验证
 
@@ -29,13 +30,22 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
   证据: [build-gate-2026-11-21](./docs/evidence/build-gate-2026-11-21.md)
 - 首次 run `44875487955` 真实失败 (clang `-Wframe-larger-than`: `init_module` 栈帧 2416 > 2048),
   修复后重派成功. 这说明 CI 真的编译了 `dh_module.c`, 不是走过场.
+- 未记录的 run `44876857725` (head `fcaff43`, 06:42:58Z→06:44:15Z, host 8s + build 1m01s,
+  success) 已补记进 [build-gate-2026-11-21](./docs/evidence/build-gate-2026-11-21.md)
+- `make runtime-check DNSK_CORE_INC=/root/droid-lkm-suite/core/include` 通过: `runtime/dh_core_backend.c`
+  在 `-D__KERNEL__` 下用真实 core 头 `dnsk_core.h` 编译干净. 该检查立刻抓到一处真实缺口:
+  适配层引用的 `DNSK_RW_MAX` 只存在于 host 仿造头, 公开 core 头只在注释里写"at most 256"
+  (`core/include/dnsk_core.h:291`), 实际常量在实现里 (`core/dnsk_rw.c:46`, 校验于 `:69`).
+  现在适配层自持该值并用 `#ifndef` 守卫, 不再依赖未公开符号
+- `sh -n tests/qemu/init-droid-hook` 与两份 workflow 的 YAML 解析通过 (非门控证据, 仅语法)
 
 **仅配置就绪 / 未验证**
 
-- `dh_module.c` 的运行时自检 (`selftest=1`) 从未在 CI 中加载执行 (CI 只编译不 insmod);
-  其行为仅由源码与 host 侧等价 backend 推断, 未在真实内核里跑过
-- `runtime/` 的内核构建方式未提供 (它需要 droid-lkm-suite core 头)
-- QEMU 门控、真机 `insmod`/`rmmod`、崩溃/告警扫描均未做
+- `dh_module.c` 的运行时自检 (`selftest=1`) 仍未在真实内核里执行; QEMU 门控已配置
+  (`qemu-gate.yml`), **首次 run 尚未派发**, 因此暂不计入已验证
+- `runtime/dh_core_backend.o` 尚未在 CI 中真正链接进 `droid_hook.ko`; build.yml 已加
+  pinned core 头 (`dnsk_core.h` sha256 校验) 与 `nm` 符号硬断言, 待 run 验证
+- 真机 `insmod`/`rmmod`、崩溃/告警扫描未做
 
 ## 这是什么
 
@@ -107,7 +117,9 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
 ## 明确未做(不要误读为已完成)
 
 - `dh_module.c` 与 `droid_hook.ko` 已由 CI DDK 构建验证 (run `44875690763`); 但 CI **只编译不加载**,
-  运行时自检未执行; 且 **没有 QEMU 门控, 没有真机加载/卸载**
+  运行时自检未执行; QEMU 门控已配置 (`qemu-gate.yml`) 但 **首次 run 尚未派发**,
+  且 **没有真机加载/卸载**
+- `runtime/` 虽已接入 `DNSK_CORE_INC` 并本机通过内核语法检查, 但 **CI 中的真实链接尚未验证**
 - 4 条 RO 写入路由(ALIAS / PTE / FIXMAP / DMA)目前只有 `FIXMAP` 经 core 的
   `F_RO` 后端真实存在; 其余三条是契约占位, 适配层尚未区分
 - `dh_insn` 的成对重编码是内部助手 + `dh_scan_refs` 的 fail-closed 预检,
@@ -137,11 +149,26 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
 ```sh
 make check          # 编译每个库层 TU(host 参数) + 跑全部 host 单测
 make kcheck         # 用 AOSP 头在 -D__KERNEL__ 下逐 TU 语法检查(无内核树时最强代理)
-make module         # 需要 KDIR 指向已准备的内核树; 本机没有, 只能在 CI/DDK 跑
+make runtime-check DNSK_CORE_INC=/path/to/droid-lkm-suite/core/include
+                    # runtime/ 适配层对真实 core 头做 -D__KERNEL__ 语法检查
+make module KDIR=/path/to/kernel/tree
+                    # 只打包库 + dh_module.c (不需要 core 头)
+make module KDIR=/path/to/kernel/tree \
+     DNSK_CORE_INC=/path/to/droid-lkm-suite/core/include
+                    # 额外把 runtime/dh_core_backend.o 编入 droid_hook.ko
 make clean
 ```
 
-`make check` / `make kcheck` 是本机能做到的全部验证. `dh_module.c` 依赖
+### 两种内核构建方式
+
+- 不带 `DNSK_CORE_INC`: 编入 `src/*.c` + `dh_module.c`, 不含 runtime 适配层; Kbuild 打印
+  `droid-hook: DNSK_CORE_INC unset -> runtime/dh_core_backend.o skipped`.
+- 带 `DNSK_CORE_INC=<core>/include`: Kbuild 检测到 `<core>/include/dnsk_core.h` 后追加
+  `runtime/dh_core_backend.o` 并加 `-I<core>/include`; 路径非空但不含该头则 `$(error)` 硬失败,
+  不会静默降级. CI (`build.yml`) 用 pinned commit 的 `dnsk_core.h` (sha256 校验) 建第二个
+  `.ko`, 并用 `nm` 断言 `dh_core_backend_init` 只在带 runtime 的那个里出现.
+
+`make check` / `make kcheck` / `make runtime-check` 是本机能做到的验证. `dh_module.c` 依赖
 `<asm/cpucap-defs.h>` 等生成头, 只能由真实内核构建(`build.yml` 的 DDK 镜像)编译验证.
-`Kbuild` 只把库层 `src/*.c` 与 `dh_module.c` 打进 `droid_hook.ko`; `runtime/` 需要 core 头,
-按需另行构建, 不属本模块.
+`Kbuild` 默认只把库层 `src/*.c` 与 `dh_module.c` 打进 `droid_hook.ko`; `runtime/` 仅在
+`DNSK_CORE_INC` 给出 core 头时一并编入.

@@ -35,6 +35,18 @@
 #include <string.h>
 #endif
 
+/*
+ * The core's per-request cap.  The public core ABI 5 header documents
+ * struct dnsk_rw_req @len as "at most 256 and within one page"
+ * (droid-lkm-suite:core/include/dnsk_core.h:291) and enforces it in the
+ * implementation (droid-lkm-suite:core/dnsk_rw.c:69), but it does not export
+ * the constant.  Keep the guard so a future header that does export it wins,
+ * instead of redefining it.
+ */
+#ifndef DNSK_RW_MAX
+#define DNSK_RW_MAX 256
+#endif
+
 #define DH_CORE_BACKEND_NAME "dnsk_core_rw5"
 #define DH_CORE_CHUNK_MAX DNSK_RW_MAX
 #define DH_CORE_MAX_BOUND 4

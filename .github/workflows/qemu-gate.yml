@@ -1,0 +1,120 @@
+name: qemu-gate
+
+# Dispatch-only: a push must not consume an Action, and this gate is the
+# expensive one (QEMU under TCG).  The host suites in build.yml are the cheap
+# gate that runs on every manual verification.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: droid-hook-qemu-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    # Build the module and a bootable arm64 Image from the DDK vmlinux in the
+    # same container, so the .ko and the kernel it is loaded into share
+    # vermagic and symbol CRCs.
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ylarod/ddk-min:android16-6.12-20260828
+      options: --user root
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build droid_hook.ko and boot Image
+        shell: bash
+        run: |
+          set -euxo pipefail
+          KDIR="/opt/ddk/kdir/android16-6.12"
+          make -C "$KDIR" M="$GITHUB_WORKSPACE" modules
+          mkdir -p out
+          cp "$GITHUB_WORKSPACE/droid_hook.ko" out/
+          # objcopy the DDK vmlinux into the raw arm64 Image QEMU -M virt boots.
+          OBJCOPY=$(command -v llvm-objcopy || command -v aarch64-linux-gnu-objcopy || command -v objcopy)
+          "$OBJCOPY" -O binary -R .note -R .note.gnu.build-id -R .comment -S \
+            "$KDIR/vmlinux" out/Image
+          # Hard assertions: the module must exist, carry the right name and a
+          # vermagic.  No `|| true` here -- a missing/incorrect .ko must fail.
+          test -s out/droid_hook.ko
+          modinfo -F name out/droid_hook.ko | grep -qx droid_hook
+          modinfo -F vermagic out/droid_hook.ko
+          ls -l out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: droid-hook-qemu-image
+          path: out/*
+          if-no-files-found: error
+
+  boot:
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: droid-hook-qemu-image
+          path: qemu
+      - name: Install QEMU
+        run: |
+          PKGS="qemu-system-arm qemu-system-common qemu-system-data cpio"
+          APT_OPTS="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3"
+          if ! sudo timeout 300 apt-get $APT_OPTS install -y --no-install-recommends $PKGS; then
+            sudo timeout 180 apt-get $APT_OPTS update
+            sudo timeout 300 apt-get $APT_OPTS install -y --no-install-recommends $PKGS
+          fi
+      - name: Build initramfs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz"
+          ALPINE_SHA256="041fa34a81788242df9e78fa69b97ab45b8ec47ddbf88864755610414a7bf3de"
+          curl -fsSL --retry 5 --retry-delay 2 -o alpine.tar.gz "$ALPINE_URL"
+          echo "$ALPINE_SHA256  alpine.tar.gz" | sha256sum -c -
+          mkdir -p rootfs
+          tar -xzf alpine.tar.gz -C rootfs
+          mkdir -p rootfs/modules rootfs/proc rootfs/sys rootfs/dev rootfs/tmp
+          chmod 1777 rootfs/tmp
+          cp qemu/droid_hook.ko rootfs/modules/
+          cp tests/qemu/init-droid-hook rootfs/init
+          chmod 0755 rootfs/init
+          (cd rootfs && find . | cpio -o -H newc | gzip -9) > initramfs.cpio.gz
+          ls -l qemu/Image initramfs.cpio.gz
+      - name: Boot and assert
+        shell: bash
+        run: |
+          set +e
+          APPEND="console=ttyAMA0 earlycon=pl011,0x9000000 rdinit=/init panic=-1 panic_on_oops=1 printk.always_kmsg_dump=1 nokaslr selinux=0 module.sig_enforce=0"
+          timeout 420 qemu-system-aarch64 \
+            -M virt -cpu max -m 2048 -smp 2 -nographic -no-reboot \
+            -kernel qemu/Image -initrd initramfs.cpio.gz \
+            -append "$APPEND" \
+            2>&1 | tee qemu.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "qemu_rc=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo "QEMU did not exit cleanly" >&2
+            exit 1
+          fi
+          grep -q 'DH_QEMU_BOOT' qemu.log
+          grep -q 'DH_SELFTEST_OK' qemu.log
+          grep -q 'DH_QEMU_UNLOADED' qemu.log
+          grep -q 'DH_QEMU_OK' qemu.log
+          if grep -Eq 'DH_QEMU_FAIL|Kernel panic|Oops|BUG:|CFI failure|Unknown symbol|invalid module format|insmod: can.t insert|WARNING:' qemu.log; then
+            echo "kernel failure or stale state in QEMU log" >&2
+            exit 1
+          fi
+          echo "droid-hook QEMU gate ok"
+      - name: Upload serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: droid-hook-qemu-log
+          path: qemu.log
+          if-no-files-found: warn
