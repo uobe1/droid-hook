@@ -39,13 +39,18 @@
 | run id | headSha | conclusion | 失败/通过点 |
 |---|---|---|---|
 | `44908866295` | `447cded` | **failure** | host 8s 通过; `Build droid_hook.ko` 通过; 新增 `Build with runtime adapter` 以 curl 404 失败 |
+| `44909065331` | `d1a0f19` | **failure** | host 通过; 默认模块构建通过; runtime TU 编译失败: `dh_core_rw_slot` 栈帧 17152 > 2048 (`-Wframe-larger-than`) |
 
-- 失败原因: 工作流 pin 的 commit `2828828` 只在本地分支, 未推到 public 远端; raw URL 404.
-  public `main` 的 `dnsk_core.h` 仍是 ABI 2, 不能拿来冒充 ABI 5.
-- 修复: 在 public 远端扫描, 找到 `f6d325be` (`origin/feat/control-plane-iteration`) 的
-  `core/include/dnsk_core.h` 与本地 ABI 5 头字节一致 (sha256
-  `7b4fb703…a01a21`, 已用 raw URL 实测), 改为 pin 该 commit; 头摘要断言不变.
-- 这是同一变更集的第 1 次失败, 按纪律修好后仅重试 1 次.
+- 失败 1 原因: 工作流 pin 的 commit `2828828` 只在本地分支, 未推到 public 远端; raw URL 404.
+  public `main` 的 `dnsk_core.h` 仍是 ABI 2, 不能拿来冒充 ABI 5. 修复: 在 public 远端扫描,
+  找到 `f6d325be` (`origin/feat/control-plane-iteration`) 的 `core/include/dnsk_core.h` 与本地
+  ABI 5 头字节一致 (sha256 `7b4fb703…a01a21`, 已用 raw URL 实测), 改为 pin 该 commit.
+- 失败 2 原因: runtime 分割路径把 `size_t chunks[64]` + `u8 saved[256*64]` 放栈上, 合计 ~17KB,
+  超内核 2KB 栈帧上限. 修复: 暂存移入 `dh_core_binding` (模块 `.bss`, 每槽 ~16.9KB),
+  分割路径按槽用 `__atomic_exchange_n` 做 single-flight, 并发分割同槽返回 `DH_E_BUSY`;
+  `<=256` 字节快路径不触碰暂存、不加串行.
+- 该变更集已用满"修好后重试 1 次"额度, **本轮不再重派 build.yml**; 栈帧修复仅做了
+  `make check` (host 90 项) + `make runtime-check` (真实 ABI 5 头) 本地验证, CI 复验待下一轮.
 
 - 成功 run 总墙钟: 约 **1 分 29 秒** (06:28:18Z → 06:29:47Z)。
 - artifact: **`droid-hook-android16-6.12`**, 134772 B (上传自 `out/`)。

@@ -43,8 +43,10 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
 
 - `dh_module.c` 的运行时自检 (`selftest=1`) 仍未在真实内核里执行; QEMU 门控已配置
   (`qemu-gate.yml`), **首次 run 尚未派发**, 因此暂不计入已验证
-- `runtime/dh_core_backend.o` 尚未在 CI 中真正链接进 `droid_hook.ko`; build.yml 已加
-  pinned core 头 (`dnsk_core.h` sha256 校验) 与 `nm` 符号硬断言, 待 run 验证
+- `runtime/dh_core_backend.o` 尚未在 CI 中成功链接: 首次尝试 (`44909065331`) 暴露
+  `dh_core_rw_slot` 栈帧 17152 > 2048 (`-Wframe-larger-than`); 已把分割路径暂存移入模块
+  `.bss` 并加同槽 `DH_E_BUSY` 串行保护, 本机 `make check`/`make runtime-check` 通过,
+  CI 复验待下一轮 (该变更集重试额度已用)
 - 真机 `insmod`/`rmmod`、崩溃/告警扫描未做
 
 ## 这是什么

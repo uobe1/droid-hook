@@ -62,7 +62,10 @@ jobs:
           path: qemu
       - name: Install QEMU
         run: |
-          PKGS="qemu-system-arm qemu-system-common qemu-system-data cpio"
+          # ipxe-qemu* provides efi-virtio.rom; without it qemu -M virt exits
+          # immediately with `failed to find romfile "efi-virtio.rom"`.  That
+          # is a hard prerequisite, not an optional nicety.
+          PKGS="qemu-system-arm qemu-system-common qemu-system-data ipxe-qemu ipxe-qemu-256k-compat-efi-roms cpio"
           APT_OPTS="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3"
           if ! sudo timeout 300 apt-get $APT_OPTS install -y --no-install-recommends $PKGS; then
             sudo timeout 180 apt-get $APT_OPTS update

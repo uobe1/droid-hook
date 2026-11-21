@@ -68,6 +68,17 @@ _Static_assert(DNSK_CORE_MAGIC == 0x444E534BU, "core MAGIC changed");
 struct dh_core_binding {
 	struct dh_backend *be;
 	struct dh_core_state *st;
+	/*
+	 * Staging for the split-transfer path: up to 64 chunks plus the 16 KB
+	 * of original bytes needed for a best-effort restore.  This is far
+	 * past the kernel's 2 KB stack-frame limit (observed as
+	 * -Wframe-larger-than 17152 when it was on dh_core_rw_slot's stack),
+	 * so it lives in module .bss.  @in_use makes the staging single-flight
+	 * per slot; the <=256-byte fast path never touches these fields.
+	 */
+	size_t chunks[DH_CORE_MAX_CHUNKS];
+	u8 saved[DH_CORE_CHUNK_MAX * DH_CORE_MAX_CHUNKS];
+	int in_use;
 };
 
 static struct dh_core_binding dh_core_bindings[DH_CORE_MAX_BOUND];
@@ -241,9 +252,8 @@ static int issue_chunk(struct dh_core_state *st, u16 opcode, u16 flags,
  */
 static int dh_core_rw_slot(int slot, struct dh_rw_req *req)
 {
-	struct dh_core_state *st = slot_state(slot);
-	size_t chunks[DH_CORE_MAX_CHUNKS];
-	u8 saved[DH_CORE_CHUNK_MAX * DH_CORE_MAX_CHUNKS];
+	struct dh_core_binding *bind = &dh_core_bindings[slot];
+	struct dh_core_state *st = bind->st;
 	int nr, i, written = 0;
 	size_t off = 0;
 	int ret;
@@ -276,32 +286,49 @@ static int dh_core_rw_slot(int slot, struct dh_rw_req *req)
 		return core.ret == 0 ? DH_OK : core.ret;
 	}
 
+	/*
+	 * The split path stages the chunk map and up to 16 KB of original
+	 * bytes.  That cannot live on the stack (kernel limit 2 KB), so it
+	 * uses the per-slot .bss staging.  One split transfer per slot at a
+	 * time: a concurrent split call on the same slot returns DH_E_BUSY
+	 * instead of corrupting the other call's originals.  The fast path
+	 * above takes no staging and is not serialised.
+	 */
+	if (__atomic_exchange_n(&bind->in_use, 1, __ATOMIC_ACQ_REL) != 0)
+		return DH_E_BUSY;
+
 	nr = plan_chunks(req->addr, req->len, st->page_size,
-			 chunks, DH_CORE_MAX_CHUNKS);
-	if (nr < 0)
-		return nr;
+			 bind->chunks, DH_CORE_MAX_CHUNKS);
+	if (nr < 0) {
+		ret = nr;
+		goto out;
+	}
 	if (op == DNSK_RW_WRITE) {
-		ret = save_originals(st, req->addr, chunks, nr,
-				     saved, sizeof(saved));
+		ret = save_originals(st, req->addr, bind->chunks, nr,
+				     bind->saved, sizeof(bind->saved));
 		if (ret != DH_OK)
-			return ret;
+			goto out;
 	}
 	for (i = 0; i < nr; i++) {
 		const void *src = req->src ? (const u8 *)req->src + off : NULL;
 		void *dst = req->dst ? (u8 *)req->dst + off : NULL;
 
 		ret = issue_chunk(st, op, req->flags, (u8 *)req->addr + off,
-				  src, dst, chunks[i]);
+				  src, dst, bind->chunks[i]);
 		if (ret != DH_OK) {
 			if (op == DNSK_RW_WRITE)
-				restore_originals(st, req->addr, chunks,
-						  saved, written);
-			return ret;
+				restore_originals(st, req->addr, bind->chunks,
+						  bind->saved, written);
+			goto out;
 		}
 		written++;
-		off += chunks[i];
+		off += bind->chunks[i];
 	}
-	return DH_OK;
+	ret = DH_OK;
+
+out:
+	__atomic_store_n(&bind->in_use, 0, __ATOMIC_RELEASE);
+	return ret;
 }
 
 /* Sleeping patch-backend writer: F_TEXT/F_RO route through stop_machine +
