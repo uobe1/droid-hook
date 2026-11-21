@@ -148,7 +148,14 @@ static struct dh_backend dh_st_be = {
 
 static int dh_run_selftest(void)
 {
-	struct dh_ctx ctx;
+	/*
+	 * struct dh_ctx is ~2.3 KB (8 x 256-byte undo entries) and would blow the
+	 * kernel's 2 KB stack-frame limit once dh_run_selftest() inlines into
+	 * init_module (clang -Wframe-larger-than).  It is a one-shot load-time
+	 * self-test, so a function-local static in module .bss is the right home;
+	 * load is serialised, so there is no re-entrancy concern.
+	 */
+	static struct dh_ctx ctx;
 	u32 jump[4];
 	u32 nop_in = 0xd503201fu, nop_out = 0;
 	u64 target = 0xffffffc008001000ULL;
