@@ -21,6 +21,7 @@
 #include "dh.h"
 
 #ifdef DH_WITH_RUNTIME
+#include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/mm.h>
 #include "dh_core_backend.h"
@@ -29,6 +30,18 @@
 static int selftest;
 module_param(selftest, int, 0444);
 MODULE_PARM_DESC(selftest, "run the Droid-Hook self-test at load, refuse to load on failure");
+
+#ifdef DH_WITH_RUNTIME
+/*
+ * require_core=1: resolve dnsk_core_get via symbol_get (no hard link
+ * dependency), require the core API to be ABI 5, and run a real rw check
+ * against it.  Holding the API keeps a module reference on dnsk_core until
+ * this module unloads; module_exit releases it.
+ */
+static int require_core;
+module_param(require_core, int, 0444);
+MODULE_PARM_DESC(require_core, "require dnsk_core ABI 5 and run a real rw self-test");
+#endif
 
 /* ---- exported contract ---- */
 
@@ -404,6 +417,120 @@ static int dh_run_runtime_selftest(void)
 	pr_info("DH_SELFTEST_RUNTIME_OK\n");
 	return 0;
 }
+
+/* ---- real dnsk_core ABI 5 routing (require_core=1) --------------------- */
+
+static int dh_core_bound;
+static struct dnsk_core_api *dh_core_api;
+static struct dh_core_state dh_core_state;
+static struct dh_backend dh_core_be;
+static u64 dh_core_probe_word;
+
+static int dh_core_rw_u64(struct dnsk_core_api *api, u16 opcode, void *addr,
+			  u64 *val)
+{
+	struct dnsk_rw_req req;
+
+	memset(&req, 0, sizeof(req));
+	req.opcode = opcode;
+	req.addr = addr;
+	if (opcode == DNSK_RW_READ)
+		req.dst = val;
+	else
+		req.src = val;
+	req.len = sizeof(*val);
+	if (api->rw(&req) != 0)
+		return DH_E_INVAL;
+	return req.ret == 0 ? DH_OK : req.ret;
+}
+
+static int dh_core_bind(void)
+{
+	typedef struct dnsk_core_api *(*core_get_fn)(u16, u16);
+	struct dnsk_core_api *api;
+	core_get_fn get;
+	void *sym;
+	void *jiffies;
+	u64 j1 = 0, j2 = 0;
+	u64 want = 0x1122334455667788ULL;
+	u64 got = 0;
+	int ret;
+
+	if (!require_core)
+		return 0;
+
+	/* symbol_get keeps the build free of a hard dnsk_core_get link
+	 * dependency; if core is absent this fails closed instead of loading a
+	 * module that silently claims routing works. */
+	sym = symbol_get("dnsk_core_get");
+	if (sym == NULL) {
+		pr_err("DH_SELFTEST_FAIL:core_get_missing\n");
+		return -ENOENT;
+	}
+	get = (core_get_fn)sym;
+	api = get(DNSK_CORE_ABI, (u16)sizeof(struct dnsk_core_api));
+	symbol_put("dnsk_core_get");
+	if (IS_ERR(api)) {
+		ret = (int)PTR_ERR(api);
+		pr_err("DH_CORE_GET=err:%d\n", ret);
+		pr_err("DH_SELFTEST_FAIL:core_get\n");
+		return ret;
+	}
+	pr_info("DH_CORE_GET=ok abi=%u size=%u\n", api->abi,
+		(unsigned)sizeof(struct dnsk_core_api));
+
+	ret = dh_core_backend_init(&dh_core_be, &dh_core_state, api);
+	if (ret != DH_OK) {
+		pr_err("DH_SELFTEST_FAIL:core_bind\n");
+		module_put(api->owner);
+		return ret;
+	}
+
+	jiffies = api->resolve("jiffies");
+	if (jiffies == NULL)
+		goto fail_rw;
+	if (dh_core_rw_u64(api, DNSK_RW_READ, jiffies, &j1) != DH_OK)
+		goto fail_rw;
+	if (dh_core_rw_u64(api, DNSK_RW_READ, jiffies, &j2) != DH_OK)
+		goto fail_rw;
+	if (j2 < j1)
+		goto fail_rw;
+	pr_info("DH_CORE_JIFFIES=%llu,%llu\n", j1, j2);
+
+	/* Write only this module's own u64: a real core rw write, no kernel
+	 * global is touched. */
+	if (dh_core_rw_u64(api, DNSK_RW_WRITE, &dh_core_probe_word, &want) !=
+	    DH_OK)
+		goto fail_rw;
+	if (dh_core_rw_u64(api, DNSK_RW_READ, &dh_core_probe_word, &got) !=
+	    DH_OK)
+		goto fail_rw;
+	if (got != want)
+		goto fail_rw;
+	dh_core_probe_word = 0;
+	pr_info("DH_CORE_WRITE_READ=ok value=%llu\n", got);
+
+	dh_core_api = api;
+	dh_core_bound = 1;
+	pr_info("DH_SELFTEST_CORE_OK\n");
+	return 0;
+
+fail_rw:
+	pr_err("DH_SELFTEST_FAIL:core_rw\n");
+	dh_core_backend_fini(&dh_core_be);
+	module_put(api->owner);
+	return -EIO;
+}
+
+static void dh_core_unbind(void)
+{
+	if (!dh_core_bound)
+		return;
+	dh_core_backend_fini(&dh_core_be);
+	module_put(dh_core_api->owner);
+	dh_core_api = NULL;
+	dh_core_bound = 0;
+}
 #endif /* DH_WITH_RUNTIME */
 
 static int dh_run_selftest(void)
@@ -493,18 +620,27 @@ static int dh_run_selftest(void)
 
 static int __init dh_module_init(void)
 {
-	if (selftest) {
-		int ret = dh_run_selftest();
+	int ret;
 
+	if (selftest) {
+		ret = dh_run_selftest();
 		if (ret != 0)
 			return ret;
 	}
+#ifdef DH_WITH_RUNTIME
+	ret = dh_core_bind();
+	if (ret != 0)
+		return ret;
+#endif
 	pr_info("droid_hook: loaded (abi %d)\n", DH_ABI);
 	return 0;
 }
 
 static void __exit dh_module_exit(void)
 {
+#ifdef DH_WITH_RUNTIME
+	dh_core_unbind();
+#endif
 	pr_info("droid_hook: unloaded\n");
 }
 
