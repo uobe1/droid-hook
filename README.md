@@ -1,8 +1,8 @@
 # Droid-Hook
 
-状态: **库层 + 运行时适配 + preflight/probe 已实现; host 侧 90 项单测通过; `droid_hook.ko`
-已在 CI 的 DDK 镜像中真实构建成功; QEMU 门控已跑通"启动→insmod→自检"路径并抓到一处
-selftest 真实缺陷 (已修, 复验待下一轮); runtime 已接入 `DNSK_CORE_INC` (CI 链接复验待下一轮)**.
+状态: **库层 + 运行时适配 + preflight/probe 已实现; host 90 项通过; `droid_hook.ko` 在 DDK
+构建成功; QEMU 门控已通过 (`selftest=1` → `DH_SELFTEST_OK` → `rmmod` 无残留, run
+`44910470845`); runtime 已编入并经 CI `nm` 断言 (run `44910310411`); 未做真机门控**.
 
 Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认分支 `main`),
 不进 droid-lkm-suite 的 `features/*/Kbuild`, 不改变其产物清单, 也不影响任何现有 LKM 的行为.
@@ -15,9 +15,9 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
 | host 门禁 `make check` | 90 项 / 6 suites / 7 TUs 全绿 |
 | 内核语法代理 `make kcheck` | 6 个库层 TU 全 ok |
 | 内核模块构建 | **已验证**: CI DDK run `44875690763` 产出 `droid_hook.ko` (290216 B, `modinfo -F name`=`droid_hook`, vermagic `6.12.76-4k SMP preempt mod_unload modversions aarch64`), artifact `droid-hook-android16-6.12`; 同 commit 还有一次未记录的成功 run `44876857725` |
-| QEMU 门控 | 基础设施**已可用**: run `44909471977` 真实启动 DDK `Image`、`insmod` 模块、执行 `selftest=1`、上传串口日志; 但 selftest 在 NOP 重定位期望上失败 (已修, 整体通过待下一轮复验) |
+| QEMU 门控 | **已验证**: run `44910470845` (head `9436b66`), `image` 1m20s + `boot` 36s; 串口 `DH_SELFTEST_OK`, `lsmod` 计数 0, 无 sysfs/kallsyms 残留, 失败签名零匹配 |
 | 真机加载/卸载 | 未做 |
-| runtime 层内核构建 | 已接入 `DNSK_CORE_INC` (`runtime/dh_core_backend.o` 按 core 头存在与否编入模块); 本机 `make runtime-check` 对真实 core 头通过; 首次 CI 构建暴露栈帧 17152 > 2048, 已把暂存移入 `.bss`, 复验待下一轮 |
+| runtime 层内核构建 | **已验证**: build run `44910310411`, `nm` 显示 4 个 `dh_core_backend_*` 符号, plain `.ko` 无这些符号, vermagic 与 DDK 内核一致 |
 
 ### 已验证 / 未验证
 
@@ -44,15 +44,24 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
   它抓到一处 host 90 项测试覆盖不到的真实缺陷: `dh_module.c` 自检把 NOP 重定位期望成
   `DH_OK`, 而库契约是 `DH_E_OPNOTSUPP` (host `tests/host/test_dh_insn.py` 亦断言 -95)
 
-**仅配置就绪 / 未验证**
+- QEMU 门控**通过**: run `44910470845` (head `9436b66`), `image` 1m20s + `boot` 36s;
+  串口 `[    1.772841][   T73] DH_SELFTEST_OK`, `droid_hook: unloaded`,
+  `DH_QEMU_LSMOD_COUNT=0`, `DH_QEMU_UNLOADED`/`DH_QEMU_OK`, `qemu_rc=0`. 失败签名
+  `BUG:/Oops/panic/invalid module format/[permanent]` 原始仅 2 次 `panic` (均为内核
+  command line 回显), 过滤后全 0. 证据:
+  [qemu-gate-2026-11-21](./docs/evidence/qemu-gate-2026-11-21.md)
+- runtime 真实链接: run `44910310411` (head `9436b66`), `llvm-nm` 输出
+  `T dh_core_backend_init` / `fini` / `page_size` / `set_page_size`, plain `.ko` 同过滤
+  为空; `droid_hook-runtime.ko` 317712 B, vermagic 与 DDK 内核一致. 证据:
+  [build-gate-2026-11-21](./docs/evidence/build-gate-2026-11-21.md)
 
-- QEMU 门控整体仍未通过 (`DH_SELFTEST_OK` 尚未出现): selftest 的 NOP/B 重定位断言已按真实
-  契约修正 (B 正向重定位 `0x17FFFD00` + NOP 拒绝), 复验待下一轮
-- `runtime/dh_core_backend.o` 尚未在 CI 中成功链接: 首次尝试 (`44909065331`) 暴露
-  `dh_core_rw_slot` 栈帧 17152 > 2048 (`-Wframe-larger-than`); 已把分割路径暂存移入模块
-  `.bss` 并加同槽 `DH_E_BUSY` 串行保护, 本机 `make check`/`make runtime-check` 通过,
-  CI 复验待下一轮 (该变更集重试额度已用)
-- 真机 `insmod`/`rmmod`、崩溃/告警扫描未做
+**未验证 / 已知边界**
+
+- 真机 `insmod`/`rmmod`、真机崩溃/告警扫描未做
+- runtime 的 >256 字节分割路径 (`dh_core_rw_slot`) 只做到"真实链接 + host 单测 + 本机语法
+  检查"; QEMU 门控加载的是**不含 runtime** 的 plain `.ko`, 该路径未在真实内核执行
+- `dh_module.c` 自检在 QEMU 中通过, 但它走的是模块内等价 backend, 不等于 core ABI 5 的
+  实际 `rw` 路由
 
 ## 这是什么
 
@@ -123,11 +132,11 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
 
 ## 明确未做(不要误读为已完成)
 
-- `dh_module.c` 与 `droid_hook.ko` 已由 CI DDK 构建验证 (run `44875690763`); QEMU 已能真实
-  `insmod` 并执行自检, 但 **门控整体尚未通过** (`DH_SELFTEST_OK` 未出现, 见 run `44909471977`),
-  且 **没有真机加载/卸载**
-- `runtime/` 虽已接入 `DNSK_CORE_INC` 并本机通过内核语法检查, 但 **CI 中的真实链接尚未验证**
-  (栈帧修复待下一轮复验)
+- `dh_module.c` 与 `droid_hook.ko` 已由 CI DDK 构建验证; QEMU 门控已通过
+  (run `44910470845`: `insmod` + `selftest=1` + `rmmod` 无残留), 但 **没有真机加载/卸载**;
+  QEMU 加载的是 plain `.ko`, runtime 路径未在 QEMU 中执行
+- `runtime/` 已接入 `DNSK_CORE_INC` 并经 CI `nm` 断言真实链接 (run `44910310411`),
+  但 **runtime 的 >256B 分割路径未在真实内核执行**
 - 4 条 RO 写入路由(ALIAS / PTE / FIXMAP / DMA)目前只有 `FIXMAP` 经 core 的
   `F_RO` 后端真实存在; 其余三条是契约占位, 适配层尚未区分
 - `dh_insn` 的成对重编码是内部助手 + `dh_scan_refs` 的 fail-closed 预检,

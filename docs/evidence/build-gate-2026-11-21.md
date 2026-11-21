@@ -118,7 +118,38 @@ CI 内的硬断言 (无 `|| true`):
   距 9 次上限与 30min 单次上限均有大量余量。
 - 失败重试严格为 1 次 (符合"同一变更集最多失败重试一次")。
 
-## 已验证 / 未验证
+## runtime 接入后的成功复验 (run `44910310411`)
+
+| 项 | 值 |
+|---|---|
+| run id | `44910310411` |
+| headSha | `9436b66` (与 qemu-gate 复验同一 commit) |
+| created → updated | 13:43:53Z → 13:45:25Z |
+| host job | 8s (13:43:56→13:44:01) |
+| build job | 1m23s (13:44:02→13:45:25) |
+| conclusion | **success** |
+
+两个构建都通过: 默认构建 (无 runtime) 与 `DNSK_CORE_INC` 构建
+(`CC [M] runtime/dh_core_backend.o` → `LD [M] droid_hook.ko`).
+runtime 版 `droid_hook-runtime.ko` 317712 B.
+
+runtime 链接证据 (run log 原文, `llvm-nm` 输出):
+
+```
+--- runtime symbols in droid_hook-runtime.ko ---
+0000000000003c04 T dh_core_backend_fini
+0000000000003ab4 T dh_core_backend_init
+0000000000003d04 T dh_core_backend_page_size
+0000000000003d14 T dh_core_backend_set_page_size
+--- plain symbols (must be empty) ---
+```
+
+- plain `.ko` 的同一 `nm` 过滤输出为空 → runtime 未被误编入默认模块
+- `modinfo -F name`=`droid_hook`; vermagic
+  `6.12.76-4k SMP preempt mod_unload modversions aarch64` (与 DDK 内核一致)
+- 这证明 `.bss` 栈帧修复后 runtime TU **真实链接进 `.ko`**, 不再只是"配置就绪"
+
+## 首次门控时的已验证 / 未验证 (历史记录)
 
 **已验证**
 - `droid_hook.ko` 在 android16-6.12 DDK 内核头下真实编译、链接、MODPOST、BTF 生成成功
