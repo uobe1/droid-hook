@@ -3,7 +3,8 @@
 状态: **库层 + 运行时适配 + preflight/probe 已实现; host 90 项通过; `droid_hook.ko` 在 DDK
 构建成功; QEMU 门控通过并执行了 runtime 分割路径 (`DH_SELFTEST_RUNTIME_OK` /
 `CHUNKS=3`, run `44911364668`, mock core); runtime 链接经 CI `nm` 断言 (run
-`44910310411`); 未做真机门控**.
+`44910310411`); 真机 ksud 加载/卸载已验证 (`DH_SELFTEST_OK`, 无残留, 317712B 旧产物无
+runtime marker)**.
 
 Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认分支 `main`),
 不进 droid-lkm-suite 的 `features/*/Kbuild`, 不改变其产物清单, 也不影响任何现有 LKM 的行为.
@@ -17,7 +18,7 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
 | 内核语法代理 `make kcheck` | 6 个库层 TU 全 ok |
 | 内核模块构建 | **已验证**: CI DDK run `44875690763` 产出 `droid_hook.ko` (290216 B, `modinfo -F name`=`droid_hook`, vermagic `6.12.76-4k SMP preempt mod_unload modversions aarch64`), artifact `droid-hook-android16-6.12`; 同 commit 还有一次未记录的成功 run `44876857725` |
 | QEMU 门控 | **已验证**: run `44911364668` (head `0bbca25`), `image` 1m17s + `boot` 16s; 串口 `DH_SELFTEST_OK` + `DH_SELFTEST_RUNTIME_OK` + `CHUNKS=3`, `lsmod` 计数 0, 无 sysfs/kallsyms 残留, 失败签名零匹配 |
-| 真机加载/卸载 | 未做 (设备当前不可达: `localhost:8022` 无监听, `adb devices` 空) |
+| 真机加载/卸载 | **已验证 (2026-11-21)**: `ksud insmod … selftest=1` → `DH_SELFTEST_OK`, `/system/bin/rmmod` → `lsmod` 0、sysfs 无残留、告警扫描 0; 设备 6.12.30-android16, 加载的 317712B 产物无 runtime marker. 证据: [device-gate-2026-11-21](./docs/evidence/device-gate-2026-11-21.md) |
 | runtime 层内核构建 | **已验证**: build run `44910310411` 的 `nm` 4 符号; qemu run `44911364668` 执行分割/恢复/回滚自检 (**mock core**, 不等于真实 core 路由) |
 
 ### 已验证 / 未验证
@@ -61,12 +62,20 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
   第 2 个 WRITE 失败后逐字节恢复, 600B 库层 txn 回滚恢复; `DH_SELFTEST_FAIL` 0 次.
   **边界**: 跑在 mock core 上, 证明适配层切块/恢复逻辑, 不等于真实 core 路由. 证据:
   [qemu-gate-2026-11-21](./docs/evidence/qemu-gate-2026-11-21.md)
+- 真机加载/卸载: 设备 `6.12.30-android16-5-g1ed949324a3e-ab13881345-4k`,
+  `su -c` 提权到 `uid=0` (`u:r:ksu:s0`); `ksud insmod … selftest=1` →
+  `[104806.675229] DH_SELFTEST_OK` / `droid_hook: loaded (abi 1)`;
+  `rmmod_rc=0` → `lsmod` 0、`/sys/module/droid_hook` 不存在、
+  `[104820.862027] droid_hook: unloaded`; `BUG:/Oops/panic/[permanent]` 扫描 0;
+  vermagic/`module_layout` 零报错. 证据:
+  [device-gate-2026-11-21](./docs/evidence/device-gate-2026-11-21.md)
 
 **未验证 / 已知边界**
 
-- 真机 `insmod`/`rmmod`、真机崩溃/告警扫描未做 (设备当前不可达: `localhost:8022`
-  无监听, `adb devices` 空)
-- runtime 分割/恢复自检跑在 **mock core** 上, 真实 core ABI 5 的 `rw` 路由仍未验证
+- 真机加载的是 317712B 旧产物 (构建于 runtime selftest 之前), 只有 `DH_SELFTEST_OK`;
+  **runtime 分割/恢复自检未在真机执行** (仅 QEMU mock core)
+- runtime 适配层的真实 core ABI 5 路由、真实 quiesce 窗口仍未验证
+- 只做了一次加载/卸载, 未做压力/并发/异常注入; 未触发 panic, pstore 路径未验证
 - runtime 适配层未提供 `icache_flush/tlb_flush/quiesce_*`, 裸 backend 会被 `dh_ctx_init`
   以 `DH_E_INVAL` 拒绝; 自检用 no-op 包装补齐四项 (`rw/ro_write` 仍走适配层), 因此 txn
   回滚证据不覆盖真实 quiesce 窗口; 嵌入方需自行包装
@@ -143,7 +152,8 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
 
 - `dh_module.c` 与 `droid_hook.ko` 已由 CI DDK 构建验证; QEMU 门控已通过
   (run `44911364668`: `insmod` + `selftest=1` + `rmmod` 无残留, 且执行了 runtime
-  分割自检), 但 **没有真机加载/卸载**; runtime 自检跑在 mock core 上, 不是真实路由
+  分割自检); 真机 ksud 加载/卸载也已通过 (317712B 旧产物, 无 runtime marker);
+  runtime 自检跑在 mock core 上, 不是真实路由, 真机上的 runtime 自检仍未做
 - `runtime/` 已接入 `DNSK_CORE_INC` 并经 CI `nm` 断言真实链接 (run `44910310411`),
   runtime 分割/恢复/回滚已由 QEMU run `44911364668` 执行, 但 **真实 core 路由与真实
   quiesce 窗口仍未验证**
