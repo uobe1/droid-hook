@@ -70,14 +70,18 @@ jobs:
           make -C "$KDIR" M="$GITHUB_WORKSPACE" DNSK_CORE_INC="$CORE_INC" modules
           cp droid_hook.ko out/droid_hook-runtime.ko
           # Hard assertions: the runtime TU must be linked into the second
-          # module and must be absent from the plain one.
+          # module and must be absent from the plain one.  Print the matching
+          # symbols so the run log itself is the link evidence.
           NM=$(command -v llvm-nm || command -v nm)
-          "$NM" out/droid_hook-runtime.ko | grep -Eq ' [Tt] dh_core_backend_init$'
-          if "$NM" out/droid_hook-plain.ko | grep -Eq ' [Tt] dh_core_backend_init$'; then
+          echo "--- runtime symbols in droid_hook-runtime.ko ---"
+          "$NM" out/droid_hook-runtime.ko | grep -E ' [Tt] dh_core_backend_(init|fini|page_size|set_page_size)$'
+          echo "--- plain symbols (must be empty) ---"
+          if "$NM" out/droid_hook-plain.ko | grep -E ' [Tt] dh_core_backend_(init|fini|page_size|set_page_size)$'; then
             echo "plain module unexpectedly contains the runtime adapter" >&2
             exit 1
           fi
           modinfo -F name out/droid_hook-runtime.ko | grep -qx droid_hook
+          modinfo -F vermagic out/droid_hook-runtime.ko
           ls -l out
       - uses: actions/upload-artifact@v4
         with:

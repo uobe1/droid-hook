@@ -44,12 +44,16 @@ echo "DH_QEMU_LOADED abi=5"
 if [ -e /sys/module/droid_hook ]; then
 	fail module_dir_stale
 fi
+lsmod_count=$("$BB" lsmod | "$BB" grep -c '^droid_hook')
+echo "DH_QEMU_LSMOD_COUNT=$lsmod_count"
+[ "$lsmod_count" -eq 0 ] || fail lsmod_stale
 "$BB" dmesg | "$BB" grep -q 'droid_hook: unloaded' || fail unload_marker
 # An unexported module symbol that survived rmmod would still show in kallsyms.
 if "$BB" grep -q ' dh_ctx_init' /proc/kallsyms; then
 	fail symbol_stale
 fi
-if "$BB" dmesg | "$BB" grep -Eq 'WARNING:|Oops|BUG:|Call trace|Kernel panic'; then
+# Failure/residue signatures, scanned over the insmod..rmmod dmesg window.
+if "$BB" dmesg | "$BB" grep -Eq 'BUG:|Oops|panic|invalid module format|\[permanent\]|WARNING:|Call trace'; then
 	fail kernel_warning_after_unload
 fi
 

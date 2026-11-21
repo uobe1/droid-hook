@@ -107,9 +107,22 @@ jobs:
           fi
           grep -q 'DH_QEMU_BOOT' qemu.log
           grep -q 'DH_SELFTEST_OK' qemu.log
+          grep -q 'DH_QEMU_LSMOD_COUNT=0' qemu.log
           grep -q 'DH_QEMU_UNLOADED' qemu.log
           grep -q 'DH_QEMU_OK' qemu.log
-          if grep -Eq 'DH_QEMU_FAIL|Kernel panic|Oops|BUG:|CFI failure|Unknown symbol|invalid module format|insmod: can.t insert|WARNING:' qemu.log; then
+          # Failure-signature scan.  The kernel echoes its own command line at
+          # boot, and that line necessarily contains "panic=-1"/"panic_on_oops=1";
+          # it is configuration, not a failure.  Drop only the boot lines that
+          # echo the command line, then require zero matches for the literal
+          # failure signatures.  A real "Kernel panic" line never contains
+          # "command line", so it is still caught.
+          grep -v 'command line' qemu.log > qemu.assert.log
+          if grep -Eq 'BUG:|Oops|panic|invalid module format|\[permanent\]' qemu.assert.log; then
+            echo "failure signature in serial log" >&2
+            grep -En 'BUG:|Oops|panic|invalid module format|\[permanent\]' qemu.assert.log >&2
+            exit 1
+          fi
+          if grep -Eq 'DH_QEMU_FAIL|CFI failure|Unknown symbol|insmod: can.t insert|WARNING:' qemu.log; then
             echo "kernel failure or stale state in QEMU log" >&2
             exit 1
           fi
