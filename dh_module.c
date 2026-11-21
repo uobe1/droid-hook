@@ -158,6 +158,7 @@ static int dh_run_selftest(void)
 	static struct dh_ctx ctx;
 	u32 jump[4];
 	u32 nop_in = 0xd503201fu, nop_out = 0;
+	u32 b_in, b_out = 0;
 	u64 target = 0xffffffc008001000ULL;
 	u64 back = 0;
 	enum dh_route route = DH_ROUTE_ALIAS;
@@ -172,10 +173,19 @@ static int dh_run_selftest(void)
 	DH_ST_CHECK(((u64)jump[2] | ((u64)jump[3] << 32)) == target,
 		    "gen_jump_literal");
 
-	/* 2. relocating a NOP must leave a NOP. */
+	/* 2. A supported PC-relative class must be retargeted exactly: a B at
+	 * 0x1000 with target 0x1400, relocated to 0x2000, needs imm26 = -0x300.
+	 * A NOP is neither PC-relative nor a data-address class, so the same
+	 * call must be refused as unsupported, not silently copied -- the host
+	 * contract suite pins that (-95, tests/host/test_dh_insn.py).  An
+	 * earlier version of this self-test expected DH_OK for the NOP and was
+	 * caught by the QEMU gate, never by the host suites. */
+	b_in = 0x14000000u | ((0x400u >> 2) & 0x03FFFFFFu);
+	ret = dh_insn_relocate(&b_in, &b_out, (void *)0x1000, (void *)0x2000, 1);
+	DH_ST_CHECK(ret == DH_OK, "relocate_b_ret");
+	DH_ST_CHECK(b_out == 0x17FFFD00u, "relocate_b_encoding");
 	ret = dh_insn_relocate(&nop_in, &nop_out, (void *)0x1000, (void *)0x2000, 1);
-	DH_ST_CHECK(ret == DH_OK, "relocate_ret");
-	DH_ST_CHECK(nop_out == nop_in, "relocate_nop_stable");
+	DH_ST_CHECK(ret == DH_E_OPNOTSUPP, "relocate_nop_rejected");
 
 	/* 3. a transaction over the in-module backend must read back what it
 	 * wrote and leave the undo log clean after commit. */
