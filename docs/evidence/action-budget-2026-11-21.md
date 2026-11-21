@@ -46,3 +46,11 @@
 4. 卸载: `/system/bin/rmmod` (该 ksud 无 rmmod); 断言 `lsmod` 0、无 sysfs、
    `BUG:/Oops/panic/[permanent]` 0; **不 reboot**.
 5. 失败: 最多修后重试 build 1 次; 设备侧失败只取证并停.
+
+## 用户授权提前 flush (一次性)
+
+- 时间: **2026-11-21T15:34:44Z**
+- 性质: 用户**一次性**授权提前 flush 本窗口 (每次 Action 都有明确用途且做了本地检查);
+  **不是策略变更**, 3h ≤9 的规则本身不变.
+- 记账: flush 后计数从 **1** 起算; 本次 `build.yml` 为 flush 后第 1 次.
+- flush 只解除时间限制, **不解除**"一次变更集一次验证": build 失败最多修后重试 1 次.
