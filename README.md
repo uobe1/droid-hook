@@ -183,6 +183,9 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
 - `docs/evidence/droid-hook-design-research.md`(本地资料, 945 行, 89 条一手 URL)
 - `docs/plans/optional-future-2026-11-14.md` §4
 - `docs/evidence/rw-memory-mutation-research.md`(RW 扩容/改值配方与 prior art)
+- [device-gate-2026-11-21](./docs/evidence/device-gate-2026-11-21.md)(真机 ksud 加载/卸载)
+- [real-core-routing-plan](./docs/evidence/real-core-routing-plan.md)(真 core ABI 5 路由方案)
+- [action-budget-2026-11-21](./docs/evidence/action-budget-2026-11-21.md)(Action 窗口核算)
 
 ## 本地验证
 
