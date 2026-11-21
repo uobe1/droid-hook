@@ -20,6 +20,12 @@
 
 #include "dh.h"
 
+#ifdef DH_WITH_RUNTIME
+#include <linux/errno.h>
+#include <linux/mm.h>
+#include "dh_core_backend.h"
+#endif
+
 static int selftest;
 module_param(selftest, int, 0444);
 MODULE_PARM_DESC(selftest, "run the Droid-Hook self-test at load, refuse to load on failure");
@@ -146,6 +152,260 @@ static struct dh_backend dh_st_be = {
 		}							\
 	} while (0)
 
+#ifdef DH_WITH_RUNTIME
+/*
+ * ---- runtime split-path self-test --------------------------------------
+ *
+ * The QEMU gate loads this module with selftest=1, so this is the only place
+ * where the core ABI 5 adapter (runtime/dh_core_backend.c) is executed in a
+ * real kernel.  A mock dnsk_core_api stands in for the suite's core: it owns a
+ * page-aligned buffer, rejects any request over 256 bytes or crossing a page,
+ * records the chunk sizes, and can fail the Nth write on purpose.
+ *
+ * A mock core is not the real core: this proves the adapter's chunking and
+ * best-effort restore logic, not the routing of the real core.  README and
+ * docs/evidence state that boundary next to the result.
+ */
+#define DH_ST_RW_MAX 256
+#define DH_ST_SPLIT_LEN 600
+#define DH_ST_PAGE_OFF 4000	/* first chunk must be 96 bytes */
+
+static u8 dh_st_core_mem[8192] __aligned(4096);
+
+struct dh_st_core_log {
+	int calls;
+	int writes;
+	int fail_on_write;
+	int fail_hit;
+	int bad_len;
+	int bad_page;
+	int nr_chunks;
+	int chunks[8];
+};
+
+static struct dh_st_core_log dh_st_core_log;
+static struct dnsk_core_api dh_st_core_api;
+static struct dh_core_state dh_st_core_state;
+static struct dh_backend dh_st_rt_be;
+
+static int dh_st_core_rw(struct dnsk_rw_req *req)
+{
+	unsigned long page_off;
+
+	if (req == NULL)
+		return DH_E_INVAL;
+	if (req->len == 0 || req->len > DH_ST_RW_MAX) {
+		dh_st_core_log.bad_len = 1;
+		req->ret = DH_E_INVAL;
+		return 0;
+	}
+	if (req->addr == NULL) {
+		req->ret = DH_E_INVAL;
+		return 0;
+	}
+	page_off = (unsigned long)req->addr & (PAGE_SIZE - 1);
+	if (page_off + req->len > PAGE_SIZE) {
+		dh_st_core_log.bad_page = 1;
+		req->ret = DH_E_INVAL;
+		return 0;
+	}
+
+	dh_st_core_log.calls++;
+	if (req->opcode == DNSK_RW_READ) {
+		if (req->dst == NULL) {
+			req->ret = DH_E_INVAL;
+			return 0;
+		}
+		memcpy(req->dst, req->addr, req->len);
+		req->ret = 0;
+		return 0;
+	}
+	if (req->opcode == DNSK_RW_WRITE) {
+		dh_st_core_log.writes++;
+		if (dh_st_core_log.fail_on_write > 0 &&
+		    dh_st_core_log.writes == dh_st_core_log.fail_on_write) {
+			dh_st_core_log.fail_hit = 1;
+			req->ret = -EIO;
+			return 0;
+		}
+		if (req->src == NULL) {
+			req->ret = DH_E_INVAL;
+			return 0;
+		}
+		memcpy(req->addr, req->src, req->len);
+		if (dh_st_core_log.nr_chunks < 8)
+			dh_st_core_log.chunks[dh_st_core_log.nr_chunks++] =
+				(int)req->len;
+		req->ret = 0;
+		return 0;
+	}
+	req->ret = DH_E_OPNOTSUPP;
+	return 0;
+}
+
+static void dh_st_core_reset(void)
+{
+	memset(&dh_st_core_log, 0, sizeof(dh_st_core_log));
+}
+
+static void dh_st_fill(u8 *buf, size_t len, u8 seed)
+{
+	size_t i;
+
+	for (i = 0; i < len; i++)
+		buf[i] = (u8)(seed + (u8)i);
+}
+
+static int dh_run_runtime_selftest(void)
+{
+	static struct dh_ctx rt_ctx;
+	static struct dh_backend rt_test_be;
+	static u8 pattern[DH_ST_SPLIT_LEN];
+	static u8 back[DH_ST_SPLIT_LEN];
+	static u8 snapshot[DH_ST_SPLIT_LEN];
+	u8 *low = dh_st_core_mem + DH_ST_PAGE_OFF;
+	u8 *base = dh_st_core_mem;
+	struct dh_rw_req req;
+	int i, ret;
+
+	/* Bind the mock core to the adapter under test. */
+	memset(&dh_st_core_api, 0, sizeof(dh_st_core_api));
+	dh_st_core_api.magic = DNSK_CORE_MAGIC;
+	dh_st_core_api.abi = DNSK_CORE_ABI;
+	dh_st_core_api.rw = dh_st_core_rw;
+	memset(&dh_st_core_state, 0, sizeof(dh_st_core_state));
+	memset(&dh_st_rt_be, 0, sizeof(dh_st_rt_be));
+	ret = dh_core_backend_init(&dh_st_rt_be, &dh_st_core_state,
+				   &dh_st_core_api);
+	DH_ST_CHECK(ret == DH_OK, "runtime_setup");
+	ret = dh_core_backend_set_page_size(&dh_st_core_state, PAGE_SIZE);
+	DH_ST_CHECK(ret == DH_OK, "runtime_setup");
+
+	/*
+	 * The raw adapter supplies no icache_flush/tlb_flush/quiesce primitives
+	 * (ABI 5 has none), but dh_ctx_init()/dh_ctx_fini()/dh_txn_rollback()
+	 * require all four to be present.  The library tests below therefore
+	 * wrap the adapter's memory primitives in a backend whose cache and
+	 * quiesce hooks are no-ops; rw/text_write/ro_write/patch_pointer/probe
+	 * still execute in the adapter.  A no-op quiesce means the txn test
+	 * proves the replay restores content, not that a runtime quiesce window
+	 * exists -- README and docs/evidence say exactly that.
+	 */
+	rt_test_be = dh_st_rt_be;
+	rt_test_be.icache_flush = dh_st_flush;
+	rt_test_be.tlb_flush = dh_st_flush;
+	rt_test_be.quiesce_begin = dh_st_quiesce_begin;
+	rt_test_be.quiesce_end = dh_st_quiesce_end;
+
+	/*
+	 * T1: 600 B through the library.  dh_write/dh_read already split at
+	 * 256 B, so this pins the library's chunking over the adapter's fast
+	 * path: every core request <= 256 B and inside one page.
+	 */
+	memset(dh_st_core_mem, 0, sizeof(dh_st_core_mem));
+	dh_st_fill(pattern, DH_ST_SPLIT_LEN, 0x30);
+	dh_st_core_reset();
+	ret = dh_ctx_init(&rt_ctx, &rt_test_be, "runtime_selftest");
+	DH_ST_CHECK(ret == DH_OK, "runtime_setup");
+	ret = dh_write(&rt_ctx, low, pattern, DH_ST_SPLIT_LEN);
+	DH_ST_CHECK(ret == DH_OK, "runtime_split_chunks");
+	DH_ST_CHECK(dh_st_core_log.nr_chunks == 3, "runtime_split_chunks");
+	DH_ST_CHECK(!dh_st_core_log.bad_len, "runtime_split_page");
+	DH_ST_CHECK(!dh_st_core_log.bad_page, "runtime_split_page");
+	memset(back, 0, sizeof(back));
+	ret = dh_read(&rt_ctx, low, back, DH_ST_SPLIT_LEN);
+	DH_ST_CHECK(ret == DH_OK, "runtime_split_readback");
+	DH_ST_CHECK(memcmp(back, pattern, DH_ST_SPLIT_LEN) == 0,
+		    "runtime_split_readback");
+
+	/*
+	 * T2: one direct 600 B backend request, which is what actually
+	 * reaches dh_core_rw_slot's split path (the library never sends more
+	 * than 256 B).  At page offset 4000 the only correct split is
+	 * 96 / 256 / 248.
+	 */
+	memset(dh_st_core_mem, 0, sizeof(dh_st_core_mem));
+	dh_st_fill(pattern, DH_ST_SPLIT_LEN, 0xa0);
+	dh_st_core_reset();
+	memset(&req, 0, sizeof(req));
+	req.opcode = DH_OP_WRITE;
+	req.addr = low;
+	req.src = pattern;
+	req.len = DH_ST_SPLIT_LEN;
+	ret = dh_st_rt_be.rw(&req);
+	DH_ST_CHECK(ret == DH_OK, "runtime_split_chunks");
+	DH_ST_CHECK(dh_st_core_log.nr_chunks == 3, "runtime_split_chunks");
+	DH_ST_CHECK(dh_st_core_log.chunks[0] == 96 &&
+		    dh_st_core_log.chunks[1] == 256 &&
+		    dh_st_core_log.chunks[2] == 248, "runtime_split_chunks");
+	DH_ST_CHECK(!dh_st_core_log.bad_len && !dh_st_core_log.bad_page,
+		    "runtime_split_page");
+	DH_ST_CHECK(memcmp(low, pattern, DH_ST_SPLIT_LEN) == 0,
+		    "runtime_split_readback");
+	pr_info("DH_SELFTEST_RUNTIME_CHUNKS=%d\n", dh_st_core_log.nr_chunks);
+
+	/*
+	 * T3: fail the second write of the same split transfer.  The adapter
+	 * must report an error and restore the first chunk it wrote, so the
+	 * buffer is byte-identical to the pre-call snapshot.
+	 */
+	memcpy(snapshot, low, DH_ST_SPLIT_LEN);
+	dh_st_fill(pattern, DH_ST_SPLIT_LEN, 0x5a);
+	dh_st_core_reset();
+	dh_st_core_log.fail_on_write = 2;
+	memset(&req, 0, sizeof(req));
+	req.opcode = DH_OP_WRITE;
+	req.addr = low;
+	req.src = pattern;
+	req.len = DH_ST_SPLIT_LEN;
+	ret = dh_st_rt_be.rw(&req);
+	DH_ST_CHECK(ret != DH_OK, "runtime_restore");
+	DH_ST_CHECK(dh_st_core_log.fail_hit, "runtime_restore");
+	DH_ST_CHECK(memcmp(low, snapshot, DH_ST_SPLIT_LEN) == 0,
+		    "runtime_restore");
+
+	/*
+	 * T4: library atomicity for a failed 600 B write.  Record the three
+	 * undo ranges (256/256/88), fail the second chunk of dh_write, then
+	 * roll back: the buffer must return byte-for-byte to its original
+	 * content.  The rollback goes through the adapter's ro_write path,
+	 * which is the sleeping F_RO route.
+	 */
+	memset(dh_st_core_mem, 0, sizeof(dh_st_core_mem));
+	dh_st_fill(pattern, DH_ST_SPLIT_LEN, 0x11);
+	memcpy(base, pattern, DH_ST_SPLIT_LEN);
+	memcpy(snapshot, base, DH_ST_SPLIT_LEN);
+	dh_st_fill(pattern, DH_ST_SPLIT_LEN, 0xc3);
+	dh_st_core_reset();
+	dh_st_core_log.fail_on_write = 2;
+	ret = dh_txn_begin(&rt_ctx);
+	DH_ST_CHECK(ret == DH_OK, "runtime_txn_rollback");
+	for (i = 0; i < DH_ST_SPLIT_LEN; i += DH_ST_RW_MAX) {
+		size_t n = DH_ST_SPLIT_LEN - (size_t)i;
+
+		if (n > DH_ST_RW_MAX)
+			n = DH_ST_RW_MAX;
+		ret = dh_txn_record(&rt_ctx, base + i, n, DH_ROUTE_ALIAS);
+		DH_ST_CHECK(ret == DH_OK, "runtime_txn_rollback");
+	}
+	ret = dh_write(&rt_ctx, base, pattern, DH_ST_SPLIT_LEN);
+	DH_ST_CHECK(ret != DH_OK, "runtime_txn_rollback");
+	DH_ST_CHECK(dh_st_core_log.fail_hit, "runtime_txn_rollback");
+	ret = dh_txn_rollback(&rt_ctx);
+	DH_ST_CHECK(ret == DH_OK, "runtime_txn_rollback");
+	DH_ST_CHECK(memcmp(base, snapshot, DH_ST_SPLIT_LEN) == 0,
+		    "runtime_txn_rollback");
+
+	ret = dh_ctx_fini(&rt_ctx);
+	DH_ST_CHECK(ret == DH_OK, "runtime_setup");
+	ret = dh_core_backend_fini(&dh_st_rt_be);
+	DH_ST_CHECK(ret == DH_OK, "runtime_setup");
+
+	pr_info("DH_SELFTEST_RUNTIME_OK\n");
+	return 0;
+}
+#endif /* DH_WITH_RUNTIME */
+
 static int dh_run_selftest(void)
 {
 	/*
@@ -220,6 +480,13 @@ static int dh_run_selftest(void)
 	DH_ST_CHECK(ret == DH_OK, "txn2_rollback");
 
 	dh_ctx_fini(&ctx);
+
+#ifdef DH_WITH_RUNTIME
+	ret = dh_run_runtime_selftest();
+	if (ret != 0)
+		return ret;
+#endif
+
 	pr_info("DH_SELFTEST_OK\n");
 	return 0;
 }

@@ -31,7 +31,17 @@ jobs:
         run: |
           set -euxo pipefail
           KDIR="/opt/ddk/kdir/android16-6.12"
-          make -C "$KDIR" M="$GITHUB_WORKSPACE" modules
+          # The runtime split-path self-test only exists when the adapter is
+          # compiled in, so build the same .ko the build gate links: core ABI 5
+          # header at a pinned commit, digest-checked.
+          CORE_INC="/tmp/dh-core-include"
+          mkdir -p "$CORE_INC"
+          CORE_URL="https://raw.githubusercontent.com/uobe1/droid-lkm-suite/f6d325be076416346523ee2dd9178b83960392e6/core/include/dnsk_core.h"
+          curl -fsSL --retry 5 --retry-delay 2 -o "$CORE_INC/dnsk_core.h" "$CORE_URL"
+          echo "7b4fb703bb8c99974e605bc2bf3fecaeae0e5c17a8ee9af5924dcfa0cae01a21  $CORE_INC/dnsk_core.h" | sha256sum -c -
+          make -C "$KDIR" M="$GITHUB_WORKSPACE" DNSK_CORE_INC="$CORE_INC" modules
+          NM=$(command -v llvm-nm || command -v nm)
+          "$NM" droid_hook.ko | grep -Eq ' [Tt] dh_core_backend_init$'
           mkdir -p out
           cp "$GITHUB_WORKSPACE/droid_hook.ko" out/
           # objcopy the DDK vmlinux into the raw arm64 Image QEMU -M virt boots.
@@ -107,6 +117,8 @@ jobs:
           fi
           grep -q 'DH_QEMU_BOOT' qemu.log
           grep -q 'DH_SELFTEST_OK' qemu.log
+          grep -q 'DH_SELFTEST_RUNTIME_OK' qemu.log
+          grep -q 'DH_SELFTEST_RUNTIME_CHUNKS=3' qemu.log
           grep -q 'DH_QEMU_LSMOD_COUNT=0' qemu.log
           grep -q 'DH_QEMU_UNLOADED' qemu.log
           grep -q 'DH_QEMU_OK' qemu.log

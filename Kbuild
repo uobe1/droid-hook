@@ -31,6 +31,10 @@ RUNTIME_CORE_HDR := $(wildcard $(DNSK_CORE_INC)/dnsk_core.h)
 ifneq ($(strip $(RUNTIME_CORE_HDR)),)
 droid_hook-y += runtime/dh_core_backend.o
 ccflags-y += -I$(DNSK_CORE_INC) -I$(src)/runtime
+# dh_module.c then also runs the runtime split-path self-test against a mock
+# core API.  The macro is what keeps that code (and the core header include)
+# out of the plain build.
+ccflags-y += -DDH_WITH_RUNTIME=1
 $(info droid-hook: DNSK_CORE_INC set -> runtime/dh_core_backend.o included)
 else ifneq ($(strip $(DNSK_CORE_INC)),)
 $(error droid-hook: DNSK_CORE_INC="$(DNSK_CORE_INC)" contains no dnsk_core.h)
