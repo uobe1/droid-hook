@@ -1,7 +1,10 @@
 # 真 core 路由集成方案 (runtime backend ↔ dnsk_core ABI 5)
 
-状态: **方案 (0 Action)**。截至 2026-11-21, 真机只验证了 mock-core 的 runtime 自检与
-ksud 加载/卸载; 真 core 路由尚未执行。
+状态: **已实现并验证 (2026-11-21)**。下文是设计记录; 实测证据见
+[real-core-routing-2026-11-21](./real-core-routing-2026-11-21.md):
+设备临时加载 suite ci-fast 的 ABI5 core, `dnsk_core_get` 经 kprobe 解析,
+`DH_CORE_GET=ok abi=5 size=80`, 读 `jiffies` 与写读回模块内 `u64` 均通过,
+卸载后 core 引用归零并恢复 ABI3。
 
 ## 0. 设备实测的前置事实
 

@@ -3,8 +3,8 @@
 状态: **库层 + 运行时适配 + preflight/probe 已实现; host 90 项通过; `droid_hook.ko` 在 DDK
 构建成功; QEMU 门控通过并执行了 runtime 分割路径 (`DH_SELFTEST_RUNTIME_OK` /
 `CHUNKS=3`, run `44911364668`, mock core); runtime 链接经 CI `nm` 断言 (run
-`44910310411`); 真机 ksud 加载/卸载已验证 (`DH_SELFTEST_OK`, 无残留, 317712B 旧产物无
-runtime marker)**.
+`44910310411`); 真机 ksud 加载/卸载已验证 (`DH_SELFTEST_OK` / `RUNTIME_OK`, 无残留);
+真 core ABI 5 路由已验证 (`dnsk_core_get` + 真实 rw, 临时 ABI5 core)**.
 
 Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认分支 `main`),
 不进 droid-lkm-suite 的 `features/*/Kbuild`, 不改变其产物清单, 也不影响任何现有 LKM 的行为.
@@ -19,7 +19,8 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
 | 内核模块构建 | **已验证**: CI DDK run `44875690763` 产出 `droid_hook.ko` (290216 B, `modinfo -F name`=`droid_hook`, vermagic `6.12.76-4k SMP preempt mod_unload modversions aarch64`), artifact `droid-hook-android16-6.12`; 同 commit 还有一次未记录的成功 run `44876857725` |
 | QEMU 门控 | **已验证**: run `44911364668` (head `0bbca25`), `image` 1m17s + `boot` 16s; 串口 `DH_SELFTEST_OK` + `DH_SELFTEST_RUNTIME_OK` + `CHUNKS=3`, `lsmod` 计数 0, 无 sysfs/kallsyms 残留, 失败签名零匹配 |
 | 真机加载/卸载 | **已验证 (2026-11-21, 本项目首次在 beryl 上真实 insmod/rmmod)**: `ksud insmod … selftest=1` → `DH_SELFTEST_OK`; 最新 339488B 产物另含设备端 `DH_SELFTEST_RUNTIME_OK` + `CHUNKS=3`; 该 ksud 无 `rmmod` 子命令, 用 `/system/bin/rmmod`(toybox) → `lsmod` 0、sysfs 无残留、告警扫描 0; 设备 6.12.30-android16. 证据: [device-gate-2026-11-21](./docs/evidence/device-gate-2026-11-21.md) |
-| runtime 层内核构建 | **已验证**: build run `44910310411` 的 `nm` 4 符号; qemu run `44911364668` 执行分割/恢复/回滚自检 (**mock core**, 不等于真实 core 路由) |
+| runtime 层内核构建 | **已验证**: build run `44910310411` 的 `nm` 4 符号; qemu/真机 selftest 执行分割/恢复/回滚 (**mock core**) |
+| 真 core 路由 (ABI5) | **已验证 (2026-11-21)**: `dnsk_core abi=5` 临时加载, `DH_CORE_GET=ok abi=5 size=80`, `jiffies` 两次读 `4323111291,4323111291`, 写读回模块内 `u64` `0x1122334455667788`, `DH_SELFTEST_CORE_OK`; 卸载后 core 引用回 0, 设备已恢复 ABI3 core. 证据: [real-core-routing-2026-11-21](./docs/evidence/real-core-routing-2026-11-21.md) |
 
 ### 已验证 / 未验证
 
@@ -62,6 +63,12 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
   第 2 个 WRITE 失败后逐字节恢复, 600B 库层 txn 回滚恢复; `DH_SELFTEST_FAIL` 0 次.
   **边界**: 跑在 mock core 上, 证明适配层切块/恢复逻辑, 不等于真实 core 路由. 证据:
   [qemu-gate-2026-11-21](./docs/evidence/qemu-gate-2026-11-21.md)
+- 真 core ABI 5 路由: 设备临时从 ABI3 切到 suite ci-fast 的 ABI5 core
+  (`dnsk_core abi=5`), droid_hook `require_core=1` 经 kprobe 解析 `dnsk_core_get`
+  (`DH_CORE_GET=ok abi=5 size=80`), 读 `jiffies` 两次 (`4323111291,4323111291`),
+  写读回模块内 `u64` (`0x1122334455667788`), `DH_SELFTEST_CORE_OK`; 卸载 droid_hook 后
+  core `Used by` 回 0, 再卸载 ABI5 core 并恢复 ABI3. 证据:
+  [real-core-routing-2026-11-21](./docs/evidence/real-core-routing-2026-11-21.md)
 - 真机加载/卸载: 设备 `6.12.30-android16-5-g1ed949324a3e-ab13881345-4k`,
   `su -c` 提权到 `uid=0` (`u:r:ksu:s0`); `ksud insmod … selftest=1` →
   `DH_SELFTEST_OK` / `droid_hook: loaded (abi 1)`; runtime 版产物 (339488 B) 另输出
@@ -73,11 +80,12 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
 
 **未验证 / 已知边界**
 
-- 设备现有 `dnsk_core` 为 **ABI 3**, 而适配层按 ABI 5 编译; 真 core 路由当前阻塞于
-  ABI 5 core 部署. 方案与风险见
-  [real-core-routing-plan](./docs/evidence/real-core-routing-plan.md)
-- 真机 runtime selftest 用的是**模块内 mock core**, 证明适配层切块/恢复逻辑在真机内核
-  可执行; **真 `dnsk_core` ABI 5 路由仍未验证**
+- 设备**默认**仍是 `dnsk_core` ABI 3; 真 core 路由是在临时加载 suite ci-fast 的 ABI5
+  core 时验证的, 测试后已恢复 ABI3. 日常状态不代表 ABI5 常驻.
+- 真 core 路由的 bootstrap 用 kprobe 解析模块符号 (`symbol_get` 只搜 builtin ksymtab);
+  写验证只写 droid_hook 自己的 `u64`, 未验证内核全局数据写入.
+- 真机 runtime selftest 用的是**模块内 mock core**; 真 core 路由是另一条 `require_core=1`
+  路径, 已单独验证
 - runtime 适配层的真实 quiesce 窗口仍未验证
 - 未做压力/并发/异常注入; 未触发 panic, pstore 路径未验证
 - runtime 适配层未提供 `icache_flush/tlb_flush/quiesce_*`, 裸 backend 会被 `dh_ctx_init`
@@ -160,8 +168,8 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
   分割自检); 真机 ksud 加载/卸载也已通过, 含 runtime marker (339488B 产物);
   runtime 自检在真机上仍跑 mock core, 不是真实路由
 - `runtime/` 已接入 `DNSK_CORE_INC` 并经 CI `nm` 断言真实链接 (run `44910310411`),
-  runtime 分割/恢复/回滚已由 QEMU 与真机 (mock core) 执行, 但 **真实 core 路由与真实
-  quiesce 窗口仍未验证**
+  runtime 分割/恢复/回滚已由 QEMU 与真机 (mock core) 执行; **真实 core ABI 5 路由**
+  已由临时 ABI5 core 验证 (读 jiffies + 写读回), 但 **真实 quiesce 窗口仍未验证**
 - 4 条 RO 写入路由(ALIAS / PTE / FIXMAP / DMA)目前只有 `FIXMAP` 经 core 的
   `F_RO` 后端真实存在; 其余三条是契约占位, 适配层尚未区分
 - `dh_insn` 的成对重编码是内部助手 + `dh_scan_refs` 的 fail-closed 预检,
@@ -186,6 +194,7 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
 - `docs/plans/optional-future-2026-11-14.md` §4
 - `docs/evidence/rw-memory-mutation-research.md`(RW 扩容/改值配方与 prior art)
 - [device-gate-2026-11-21](./docs/evidence/device-gate-2026-11-21.md)(真机 ksud 加载/卸载)
+- [real-core-routing-2026-11-21](./docs/evidence/real-core-routing-2026-11-21.md)(真 core ABI 5 路由证据)
 - [real-core-routing-plan](./docs/evidence/real-core-routing-plan.md)(真 core ABI 5 路由方案)
 - [action-budget-2026-11-21](./docs/evidence/action-budget-2026-11-21.md)(Action 窗口核算)
 

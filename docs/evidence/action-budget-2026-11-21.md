@@ -63,3 +63,12 @@
 - 真机复跑 0 Action: 设备端 `DH_SELFTEST_RUNTIME_CHUNKS=3` +
   `DH_SELFTEST_RUNTIME_OK` + `DH_SELFTEST_OK`, rmmod/lsmod/sysfs/scan 全通过.
 - 当前 flush 后计数: **1/9**.
+
+## 真 core 路由验证 (flush 后第 2–3 次)
+
+- `44923717212` (2/9): head `ef534a3`, build 1m26s, **success**; 设备加载失败于
+  `DH_SELFTEST_FAIL:core_get_missing` (`symbol_get` 只搜 builtin).
+- `44924121975` (3/9): head `7480994`, build 1m24s, **success**; 设备
+  `require_core=1` 真 rw 通过 (`DH_CORE_GET=ok abi=5`, jiffies, write/read,
+  `DH_SELFTEST_CORE_OK`), 卸载后 core 引用回 0, 已恢复 ABI3.
+- 真机操作 0 Action; 当前 flush 后计数 **3/9**.
