@@ -328,7 +328,7 @@ static int dh_run_runtime_selftest(void)
 	dh_st_fill(pattern, DH_ST_SPLIT_LEN, 0xa0);
 	dh_st_core_reset();
 	memset(&req, 0, sizeof(req));
-	req.opcode = DH_OP_WRITE;
+	req.opcode = DNSK_RW_WRITE;
 	req.addr = low;
 	req.src = pattern;
 	req.len = DH_ST_SPLIT_LEN;
@@ -354,7 +354,7 @@ static int dh_run_runtime_selftest(void)
 	dh_st_core_reset();
 	dh_st_core_log.fail_on_write = 2;
 	memset(&req, 0, sizeof(req));
-	req.opcode = DH_OP_WRITE;
+	req.opcode = DNSK_RW_WRITE;
 	req.addr = low;
 	req.src = pattern;
 	req.len = DH_ST_SPLIT_LEN;
