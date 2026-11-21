@@ -69,22 +69,59 @@
 - 补充: GKI `android16-6.12` KMI 的 `module_layout` CRC 稳定, DDK 同为 6.12.x,
   预期大概率不撞 CRC; 本次实测确未撞.
 
+## runtime selftest 真机复跑 (2026-11-21 15:34Z 窗口 flush 后)
+
+| 项 | 值 |
+|---|---|
+| build run | `44919948478` (head `5c4217d`, created 15:34:58Z, build job 1m28s, success) |
+| artifact | `droid-hook-android16-6.12`, `droid_hook-runtime.ko` **339488 B** |
+| sha256 | `bb34603ec7767f703a532e4f9d561a987dbc3ba7ba3cfc54ea920b5f060810ef` (本地与设备一致) |
+| 设备 | `/data/local/tmp/droid_hook.ko` root:root 0644, 339488 B |
+
+加载前 `dmesg -C` 成功, 设备端 dmesg 原文:
+
+```
+[110125.429793] DH_SELFTEST_RUNTIME_CHUNKS=3
+[110125.429809] DH_SELFTEST_RUNTIME_OK
+[110125.429812] DH_SELFTEST_OK
+[110125.429814] droid_hook: loaded (abi 1)
+```
+
+卸载与扫描 (同一 dmesg 窗口):
+
+```
+rmmod_rc=0
+LSMOD_COUNT=0
+/sys/module/droid_hook: No such file or directory
+SELFTEST_FAIL_COUNT=0
+SCAN_COUNT=0          # BUG:|Oops|panic|[permanent]
+LOADERR_COUNT=0       # version magic / CRC / Unknown symbol 等
+[110131.889972] droid_hook: unloaded
+```
+
+**边界**: 设备上的 runtime selftest 仍然跑在模块内 **mock core** (`dh_st_core_rw`) 上,
+所以它证明的是"适配层切块/恢复逻辑在真机内核上可执行", **不是**真 `dnsk_core` ABI 5
+路由. 真 core 路由见 [real-core-routing-plan](./real-core-routing-plan.md).
+
 ## 结论
 
 **真机已验证**
-- `ksud insmod` 成功加载 DDK 6.12.76 构建的模块到 6.12.30-android16 设备;
-  vermagic / CRC / 未定义符号三类 dmesg 错误计数均为 0 (布局由 BTF 适配, 未崩溃).
-- `selftest=1` 在真实内核执行并输出 `DH_SELFTEST_OK` (`droid_hook: loaded (abi 1)`).
+- `ksud insmod` 成功加载到 6.12.30-android16 设备; vermagic / CRC / 未定义符号三类
+  dmesg 错误计数均为 0 (布局由 BTF 适配, 未崩溃).
+- `selftest=1` 在真实内核执行: `DH_SELFTEST_OK`; runtime 版产物 (339488 B) 还输出
+  `DH_SELFTEST_RUNTIME_CHUNKS=3` + `DH_SELFTEST_RUNTIME_OK`, 无 `DH_SELFTEST_FAIL`.
 - 卸载成功 (`rmmod_rc=0`), `lsmod` 计数 0, `/sys/module/droid_hook` 不存在,
   dmesg `droid_hook: unloaded`.
 - 加载前清空 dmesg 后, `BUG:|Oops|panic|[permanent]` 扫描计数 0.
 
 **未验证 / 边界**
-- 设备上加载的是 `317712` B 旧产物, **没有 runtime selftest marker**; runtime 分割/恢复
-  自检只在 QEMU (mock core) 跑过, 未在真机执行.
-- runtime 适配层的真实 core 路由、真实 quiesce 窗口仍未验证.
-- 只做了一次加载/卸载, 未做压力/并发/异常注入; 未触发 panic, 因而 pstore 路径未验证.
+- 设备上的 runtime selftest 用的是 **mock core**, 真 `dnsk_core` ABI 5 路由仍未验证
+  (设备当前 core 是 ABI 3, 见 real-core-routing-plan).
+- runtime 适配层的真实 quiesce 窗口仍未验证.
+- 未做压力/并发/异常注入; 未触发 panic, 因而 pstore 路径未验证.
 
 ## Action 记账
 
-- 真机门控不消耗 GitHub Action; 本窗口仍 **8/9**, 未派任何 workflow.
+- 用户一次性授权提前 flush (2026-11-21T15:34:44Z); flush 后计数从 1 起算.
+- build run `44919948478` 为 flush 后第 1 次; 真机复跑 0 Action. 当前 **1/9**.
+- 详见 [action-budget-2026-11-21](./action-budget-2026-11-21.md).

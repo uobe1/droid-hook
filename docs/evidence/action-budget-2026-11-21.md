@@ -54,3 +54,12 @@
   **不是策略变更**, 3h ≤9 的规则本身不变.
 - 记账: flush 后计数从 **1** 起算; 本次 `build.yml` 为 flush 后第 1 次.
 - flush 只解除时间限制, **不解除**"一次变更集一次验证": build 失败最多修后重试 1 次.
+
+## flush 后首发 (2026-11-21)
+
+- `build.yml` run `44919948478` @ 15:34:58Z, head `5c4217d`, **success**
+  (build job 1m28s); artifact `droid-hook-android16-6.12`,
+  `droid_hook-runtime.ko` 339488 B, sha256 `bb34603e…10ef`.
+- 真机复跑 0 Action: 设备端 `DH_SELFTEST_RUNTIME_CHUNKS=3` +
+  `DH_SELFTEST_RUNTIME_OK` + `DH_SELFTEST_OK`, rmmod/lsmod/sysfs/scan 全通过.
+- 当前 flush 后计数: **1/9**.
