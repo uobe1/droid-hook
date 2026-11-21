@@ -67,7 +67,7 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
   `[104806.675229] DH_SELFTEST_OK` / `droid_hook: loaded (abi 1)`;
   `rmmod_rc=0` → `lsmod` 0、`/sys/module/droid_hook` 不存在、
   `[104820.862027] droid_hook: unloaded`; `BUG:/Oops/panic/[permanent]` 扫描 0;
-  vermagic/`module_layout` 零报错. 证据:
+  vermagic/CRC/未定义符号三类 dmesg 错误均为 0 (布局由加载器按 BTF 适配). 证据:
   [device-gate-2026-11-21](./docs/evidence/device-gate-2026-11-21.md)
 
 **未验证 / 已知边界**

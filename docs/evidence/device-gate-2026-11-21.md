@@ -37,18 +37,40 @@
 | 5 断言 | `[104806.675229] DH_SELFTEST_OK`; `[104806.675246] droid_hook: loaded (abi 1)`; `lsmod` 有 `droid_hook 135168 0`; `/sys/module/droid_hook` 存在 |
 | 6 卸载 | `ksud rmmod` 不存在 (`rmmod_rc=2`, `unrecognized subcommand`); 改用 `/system/bin/rmmod droid_hook` → `rmmod_rc=0`; `LSMOD_COUNT=0`; `/sys/module/droid_hook: No such file or directory`; `[104820.862027] droid_hook: unloaded` |
 | 7 告警 | `COUNT=$(dmesg | grep -Ec 'BUG:|Oops|panic|\[permanent\]')` → **0** |
-| 8 vermagic | `VG_COUNT=$(dmesg | grep -Ec 'version magic|module_layout|disagrees|invalid module format')` → **0** |
+| 8 错误分类 | `VERMAGIC=0` (`version magic|invalid module format`)、`CRC=0` (`disagrees about version|no symbol version`)、`SYMBOL=0` (`Unknown symbol|unresolved symbol`); `LSMOD_COUNT=0`; sysfs 不存在 |
 
 - 未执行 reboot; 未安装任何东西; 未改设备配置.
 - 说明: 在最终 ksud 路径之前, 曾用静态 glibc `lkmctl-android` 对同一 `317712` B 产物
   做过一次加载/卸载 (同样 `DH_SELFTEST_OK`、`lsmod` 0、扫描干净); 按指示, 正式证据
   以上面的 ksud 路径为准.
 
+## 加载错误分类 (vermagic / CRC / 布局 / 符号)
+
+这四层不是一回事:
+
+| 层 | 形态 | 谁检查 | 失败文案 |
+|---|---|---|---|
+| vermagic | `.modinfo` 一行字符串 | 内核 `check_modinfo()` | `version magic ... should be ...` (ENOEXEC) |
+| CRC / symbol version | `__versions` 段每符号一条 | 内核 `check_version()` | `disagrees about version of symbol <name>` |
+| struct module 布局 | 结构体偏移 | 加载器按 BTF 适配 | 崩溃/字段错位, 不一定有文案 |
+| 未定义符号 | ELF `SHN_UNDEF` | 加载器绑定 / 内核解析 | `Unknown symbol ...` |
+
+本次 (dmesg 在加载前已清空, 窗口仅含本次加载): `VERMAGIC=0`、`CRC=0`、`SYMBOL=0`,
+**四类错误均未触发**; ksud 完成了符号绑定与加载, `selftest=1` 通过, 卸载干净.
+
+口径 (准确版):
+- **允许**加载器按设计做 vermagic 重写、`struct module` 布局适配、未定义符号绑定.
+- **禁止**手填假 CRC 强行加载后宣称成功, 也禁止 `--force` 硬闯; 这是证据真实性问题.
+- 若将来撞上 CRC, 应作为"加载器支持 `__versions` 处理"的明确功能开发来记录
+  (行为/失败文案/回退路径), 不是本次门控的失败.
+- 补充: GKI `android16-6.12` KMI 的 `module_layout` CRC 稳定, DDK 同为 6.12.x,
+  预期大概率不撞 CRC; 本次实测确未撞.
+
 ## 结论
 
 **真机已验证**
 - `ksud insmod` 成功加载 DDK 6.12.76 构建的模块到 6.12.30-android16 设备;
-  vermagic / `module_layout` **未被拒** (`VG_COUNT=0`, 无相关 dmesg).
+  vermagic / CRC / 未定义符号三类 dmesg 错误计数均为 0 (布局由 BTF 适配, 未崩溃).
 - `selftest=1` 在真实内核执行并输出 `DH_SELFTEST_OK` (`droid_hook: loaded (abi 1)`).
 - 卸载成功 (`rmmod_rc=0`), `lsmod` 计数 0, `/sys/module/droid_hook` 不存在,
   dmesg `droid_hook: unloaded`.
