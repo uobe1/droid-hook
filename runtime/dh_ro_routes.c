@@ -70,6 +70,29 @@ static void *dh_route_symbol(const char *name)
 	return addr;
 }
 
+static dh_set_memory_fn dh_route_set_memory(const char *name)
+{
+	return (dh_set_memory_fn)dh_route_symbol(name);
+}
+
+int dh_ro_set_rw(unsigned long addr, int npages)
+{
+	if (dh_set_memory_rw_fn == NULL)
+		dh_set_memory_rw_fn = dh_route_set_memory("set_memory_rw");
+	if (dh_set_memory_rw_fn == NULL)
+		return DH_E_OPNOTSUPP;
+	return dh_set_memory_rw_fn(addr, npages);
+}
+
+int dh_ro_set_ro(unsigned long addr, int npages)
+{
+	if (dh_set_memory_ro_fn == NULL)
+		dh_set_memory_ro_fn = dh_route_set_memory("set_memory_ro");
+	if (dh_set_memory_ro_fn == NULL)
+		return DH_E_OPNOTSUPP;
+	return dh_set_memory_ro_fn(addr, npages);
+}
+
 static int dh_ro_pte_write(void *addr, const void *src, size_t len)
 {
 	unsigned long start = (unsigned long)addr & PAGE_MASK;
@@ -78,19 +101,11 @@ static int dh_ro_pte_write(void *addr, const void *src, size_t len)
 	int npages = (int)((end - start) >> PAGE_SHIFT);
 	int ret;
 
-	if (dh_set_memory_rw_fn == NULL)
-		dh_set_memory_rw_fn = (dh_set_memory_fn)
-			dh_route_symbol("set_memory_rw");
-	if (dh_set_memory_ro_fn == NULL)
-		dh_set_memory_ro_fn = (dh_set_memory_fn)
-			dh_route_symbol("set_memory_ro");
-	if (dh_set_memory_rw_fn == NULL || dh_set_memory_ro_fn == NULL)
-		return DH_E_OPNOTSUPP;
-	ret = dh_set_memory_rw_fn(start, npages);
+	ret = dh_ro_set_rw(start, npages);
 	if (ret != 0)
 		return ret;
 	memcpy(addr, src, len);
-	ret = dh_set_memory_ro_fn(start, npages);
+	ret = dh_ro_set_ro(start, npages);
 	return ret != 0 ? ret : DH_OK;
 }
 
@@ -127,6 +142,20 @@ int dh_ro_route_write(void *addr, const void *src, size_t len,
 	(void)src;
 	(void)len;
 	(void)route;
+	return DH_E_OPNOTSUPP;
+}
+
+int dh_ro_set_ro(unsigned long addr, int npages)
+{
+	(void)addr;
+	(void)npages;
+	return DH_E_OPNOTSUPP;
+}
+
+int dh_ro_set_rw(unsigned long addr, int npages)
+{
+	(void)addr;
+	(void)npages;
 	return DH_E_OPNOTSUPP;
 }
 

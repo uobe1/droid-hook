@@ -25,7 +25,6 @@
 #include <linux/errno.h>
 #include <linux/kprobes.h>
 #include <linux/mm.h>
-#include <linux/set_memory.h>
 #include <linux/vmalloc.h>
 #include "dh_core_backend.h"
 #include "dh_ro_routes.h"
@@ -589,7 +588,7 @@ static int dh_run_route_selftest(void)
 	if (page == NULL)
 		return -ENOMEM;
 	memset(page, 0xaa, 2 * PAGE_SIZE);
-	ret = set_memory_ro((unsigned long)page, 2);
+	ret = dh_ro_set_ro((unsigned long)page, 2);
 	if (ret != 0) {
 		vfree(page);
 		return ret;
@@ -604,7 +603,7 @@ static int dh_run_route_selftest(void)
 		ret = dh_route_check("DH_ROUTE_PTE_OK", (u8 *)page + 100,
 				     pat, sizeof(pat), DH_ROUTE_PTE);
 	}
-	set_memory_rw((unsigned long)page, 2);
+	dh_ro_set_rw((unsigned long)page, 2);
 	vfree(page);
 	return ret;
 }

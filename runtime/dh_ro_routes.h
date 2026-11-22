@@ -19,4 +19,17 @@
 int dh_ro_route_write(void *addr, const void *src, size_t len,
 		      enum dh_route route);
 
+/*
+ * dh_ro_set_ro() / dh_ro_set_rw() - change page permissions for the PTE route
+ *
+ * Thin wrappers over set_memory_ro()/set_memory_rw().  Those two functions
+ * are not exported to modules on every GKI build, so the wrappers resolve
+ * them through kallsyms (kprobe) on first use and return
+ * DH_E_OPNOTSUPP when they are unavailable.  Callers must not import
+ * set_memory_ro/set_memory_rw directly: doing so makes the whole module
+ * refuse to load with "Unknown symbol".
+ */
+int dh_ro_set_ro(unsigned long addr, int npages);
+int dh_ro_set_rw(unsigned long addr, int npages);
+
 #endif /* _DH_RO_ROUTES_H */
