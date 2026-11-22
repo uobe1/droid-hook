@@ -94,6 +94,22 @@ int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc,
 	return DH_OK;
 }
 
+int dh_insn_relocate_out(const u32 *src, u32 *dst, size_t dst_cap,
+			 size_t *out_nr, void *src_pc, void *dst_pc,
+			 size_t nr)
+{
+	int ret;
+
+	if (!out_nr)
+		return DH_E_INVAL;
+	if (nr > dst_cap)
+		return DH_E_NOSPC;
+	ret = dh_insn_relocate(src, dst, src_pc, dst_pc, nr);
+	if (ret == DH_OK)
+		*out_nr = nr;
+	return ret;
+}
+
 int dh_scan_refs(struct dh_ctx *ctx, void *old_base, size_t old_len,
 		 void *new_base, void **sites, size_t max_sites)
 {

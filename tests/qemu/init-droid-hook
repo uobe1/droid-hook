@@ -35,9 +35,13 @@ echo "DH_QEMU_BOOT $(cat /proc/sys/kernel/osrelease)"
 # to this module, and a module warning must not hide in boot noise.
 "$BB" dmesg -c > /dev/null || fail dmesg_clear
 
-"$BB" insmod /modules/droid_hook.ko selftest=1 || fail insmod
+"$BB" insmod /modules/droid_hook.ko selftest=1 hooktest=1 || fail insmod
 [ -e /sys/module/droid_hook ] || fail module_dir_missing
 "$BB" dmesg | "$BB" grep -q 'DH_SELFTEST_OK' || fail selftest_marker
+"$BB" dmesg | "$BB" grep -q 'DH_HOOKTEST_INTERCEPT_OK' || fail hook_intercept
+"$BB" dmesg | "$BB" grep -q 'DH_HOOKTEST_RESTORED' || fail hook_restored
+"$BB" dmesg | "$BB" grep -q 'DH_ROUTE_ALIAS_OK' || fail route_alias
+"$BB" dmesg | "$BB" grep -q 'DH_ROUTE_PTE_OK' || fail route_pte
 echo "DH_QEMU_LOADED abi=5"
 
 "$BB" rmmod droid_hook || fail rmmod

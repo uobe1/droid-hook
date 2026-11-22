@@ -237,6 +237,7 @@ int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
 	u32 origin[DH_ORIGIN_INSNS];
 	u32 back[DH_JUMP_INSNS];
 	size_t klen;
+	size_t relo_nr = 0;
 	int ret;
 
 	if (!ctx || !ctx->be || !key || !target || !replacement || !out)
@@ -276,20 +277,20 @@ int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
 	ret = dh_insn_gen_absolute_jump(t->jump, replacement);
 	if (ret)
 		goto fail;
-	/* dh_insn_relocate() writes the displaced instructions into the relo
-	 * area.  Its signature carries no output length, so the library
-	 * reserves DH_ORIGIN_INSNS slots and appends the back-jump after
-	 * them; see the contract note reported to the lead. */
-	ret = dh_insn_relocate(origin, t->relo, target, (void *)t->relo,
-			       DH_ORIGIN_INSNS);
+	/* The relocator reports how many words it actually produced, so the
+	 * back-jump goes right after them instead of at a hard-coded slot 4. */
+	ret = dh_insn_relocate_out(origin, t->relo,
+				   DH_RELO_INSNS - DH_JUMP_INSNS, &relo_nr,
+				   target, (void *)t->relo,
+				   DH_ORIGIN_INSNS);
 	if (ret)
 		goto fail;
 	ret = dh_insn_gen_absolute_jump(back,
 			(void *)((unsigned char *)target + DH_INSN_BYTES));
 	if (ret)
 		goto fail;
-	memcpy(&t->relo[DH_ORIGIN_INSNS], back, sizeof(back));
-	t->relo_len = DH_ORIGIN_INSNS + DH_JUMP_INSNS;
+	memcpy(&t->relo[relo_nr], back, sizeof(back));
+	t->relo_len = relo_nr + DH_JUMP_INSNS;
 
 	ret = dh_txn_begin(ctx);
 	if (ret)

@@ -468,6 +468,43 @@ int main(int argc, char **argv)
 	}
 
 #ifdef DH_INS_TEST_SEAM
+	if (strcmp(cmd, "pair_public") == 0) {
+		u32 out[2] = { 0, 0 };
+		u32 adrp = mk_adrp(0x10000, 0);
+		u32 follow = mk_add(0x20, 0, 1, 2);
+		int ret = dh_insn_retarget_pair(
+			adrp, follow, (void *)(uintptr_t)0x10000000ULL,
+			(void *)(uintptr_t)0x20000000ULL,
+			(void *)(uintptr_t)0x30000000ULL, out);
+
+		printf("pair_public_ret=%d\n", ret);
+		printf("pair_public_adrp=0x%08" PRIx32 "\n", out[0]);
+		printf("pair_public_follow=0x%08" PRIx32 "\n", out[1]);
+		printf("pair_public_null=%d\n",
+		       dh_insn_retarget_pair(
+			       adrp, follow, (void *)(uintptr_t)0x10000000ULL,
+			       (void *)(uintptr_t)0x20000000ULL,
+			       (void *)(uintptr_t)0x30000000ULL, NULL));
+		return 0;
+	}
+	if (strcmp(cmd, "reloc_out") == 0) {
+		u32 in = 0x14000000U; /* B +0 */
+		u32 out[4] = { 0, 0, 0, 0 };
+		size_t nr = 99, nr0 = 99;
+		int ret = dh_insn_relocate_out(
+			&in, out, 4, &nr, (void *)(uintptr_t)0x1000ULL,
+			(void *)(uintptr_t)0x2000ULL, 1);
+		int cap = dh_insn_relocate_out(
+			&in, out, 0, &nr0, (void *)(uintptr_t)0x1000ULL,
+			(void *)(uintptr_t)0x2000ULL, 1);
+
+		printf("reloc_out_ret=%d\n", ret);
+		printf("reloc_out_nr=%zu\n", nr);
+		printf("reloc_out_cap=%d\n", cap);
+		printf("reloc_out_nr_after_cap=%zu\n", nr0);
+		return 0;
+	}
+
 	if (strcmp(cmd, "pair") == 0) {
 		/* Every case uses ADRP at 0x10000000 pointing at page
 		 * 0x20000000 (the old array) and moves the array to 0x30000000.

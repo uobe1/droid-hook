@@ -119,6 +119,10 @@ jobs:
           grep -q 'DH_SELFTEST_OK' qemu.log
           grep -q 'DH_SELFTEST_RUNTIME_OK' qemu.log
           grep -q 'DH_SELFTEST_RUNTIME_CHUNKS=3' qemu.log
+          grep -q 'DH_HOOKTEST_INTERCEPT_OK' qemu.log
+          grep -q 'DH_HOOKTEST_RESTORED' qemu.log
+          grep -q 'DH_ROUTE_ALIAS_OK' qemu.log
+          grep -q 'DH_ROUTE_PTE_OK' qemu.log
           grep -q 'DH_QEMU_LSMOD_COUNT=0' qemu.log
           grep -q 'DH_QEMU_UNLOADED' qemu.log
           grep -q 'DH_QEMU_OK' qemu.log

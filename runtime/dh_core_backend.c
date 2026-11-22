@@ -28,6 +28,7 @@
  */
 
 #include "dh_core_backend.h"
+#include "dh_ro_routes.h"
 
 #ifdef __KERNEL__
 #include <linux/string.h>
@@ -49,7 +50,16 @@
 
 #define DH_CORE_BACKEND_NAME "dnsk_core_rw5"
 #define DH_CORE_CHUNK_MAX DNSK_RW_MAX
-#define DH_CORE_MAX_BOUND 4
+/*
+ * Static trampoline slots.  The backend callbacks carry no userdata, so each
+ * bound backend needs its own generated function set; the count is therefore
+ * a compile-time design limit, not an unbounded pool.  16 is enough for the
+ * embedding patterns seen so far; a 17th bind returns DH_E_NOSPC.  Override
+ * the macro in the build to change it.
+ */
+#ifndef DH_CORE_MAX_BOUND
+#define DH_CORE_MAX_BOUND 16
+#endif
 #define DH_CORE_MAX_CHUNKS 64
 
 /* Compile-time guards: a changed core enum/flag must break the build, not
@@ -335,7 +345,8 @@ out:
  * fixmap and must not be called from a lock-held context.  Large transfers are
  * split the same way as the data path. */
 static int dh_core_patch_write_slot(int slot, void *addr, const void *src,
-				    size_t len, u16 patch_flag)
+				    size_t len, enum dh_route route,
+				    u16 patch_flag)
 {
 	struct dh_core_state *st = slot_state(slot);
 	size_t chunks[DH_CORE_MAX_CHUNKS];
@@ -345,6 +356,13 @@ static int dh_core_patch_write_slot(int slot, void *addr, const void *src,
 
 	if (st == NULL || !st->bound || src == NULL || len == 0)
 		return DH_E_INVAL;
+	(void)route;
+#ifdef __KERNEL__
+	if (route == DH_ROUTE_ALIAS || route == DH_ROUTE_PTE)
+		return dh_ro_route_write(addr, src, len, route);
+	if (route == DH_ROUTE_DMA)
+		return DH_E_OPNOTSUPP;
+#endif
 	nr = plan_chunks(addr, len, st->page_size,
 			 chunks, DH_CORE_MAX_CHUNKS);
 	if (nr < 0)
@@ -370,14 +388,14 @@ static int dh_core_rw_##N(struct dh_rw_req *req)                               \
 static int dh_core_text_write_##N(void *addr, const void *src, size_t len,     \
 				  enum dh_route route)                          \
 {                                                                              \
-	(void)route;                                                            \
-	return dh_core_patch_write_slot(N, addr, src, len, DNSK_RW_F_TEXT);     \
+	return dh_core_patch_write_slot(N, addr, src, len, route,                \
+					 DNSK_RW_F_TEXT);                       \
 }                                                                              \
 static int dh_core_ro_write_##N(void *addr, const void *src, size_t len,       \
 				enum dh_route route)                            \
 {                                                                              \
-	(void)route;                                                            \
-	return dh_core_patch_write_slot(N, addr, src, len, DNSK_RW_F_RO);       \
+	return dh_core_patch_write_slot(N, addr, src, len, route,                \
+					 DNSK_RW_F_RO);                         \
 }                                                                              \
 static int dh_core_patch_pointer_##N(void *target, void *value)                \
 {                                                                              \
@@ -398,6 +416,18 @@ DH_CORE_SLOT_FUNCS(0)
 DH_CORE_SLOT_FUNCS(1)
 DH_CORE_SLOT_FUNCS(2)
 DH_CORE_SLOT_FUNCS(3)
+DH_CORE_SLOT_FUNCS(4)
+DH_CORE_SLOT_FUNCS(5)
+DH_CORE_SLOT_FUNCS(6)
+DH_CORE_SLOT_FUNCS(7)
+DH_CORE_SLOT_FUNCS(8)
+DH_CORE_SLOT_FUNCS(9)
+DH_CORE_SLOT_FUNCS(10)
+DH_CORE_SLOT_FUNCS(11)
+DH_CORE_SLOT_FUNCS(12)
+DH_CORE_SLOT_FUNCS(13)
+DH_CORE_SLOT_FUNCS(14)
+DH_CORE_SLOT_FUNCS(15)
 
 struct dh_core_slot_ops {
 	int (*rw)(struct dh_rw_req *req);
@@ -418,6 +448,30 @@ static const struct dh_core_slot_ops dh_core_slot_ops[DH_CORE_MAX_BOUND] = {
 	  dh_core_patch_pointer_2, dh_core_probe_2 },
 	{ dh_core_rw_3, dh_core_text_write_3, dh_core_ro_write_3,
 	  dh_core_patch_pointer_3, dh_core_probe_3 },
+	{ dh_core_rw_4, dh_core_text_write_4, dh_core_ro_write_4,
+	  dh_core_patch_pointer_4, dh_core_probe_4 },
+	{ dh_core_rw_5, dh_core_text_write_5, dh_core_ro_write_5,
+	  dh_core_patch_pointer_5, dh_core_probe_5 },
+	{ dh_core_rw_6, dh_core_text_write_6, dh_core_ro_write_6,
+	  dh_core_patch_pointer_6, dh_core_probe_6 },
+	{ dh_core_rw_7, dh_core_text_write_7, dh_core_ro_write_7,
+	  dh_core_patch_pointer_7, dh_core_probe_7 },
+	{ dh_core_rw_8, dh_core_text_write_8, dh_core_ro_write_8,
+	  dh_core_patch_pointer_8, dh_core_probe_8 },
+	{ dh_core_rw_9, dh_core_text_write_9, dh_core_ro_write_9,
+	  dh_core_patch_pointer_9, dh_core_probe_9 },
+	{ dh_core_rw_10, dh_core_text_write_10, dh_core_ro_write_10,
+	  dh_core_patch_pointer_10, dh_core_probe_10 },
+	{ dh_core_rw_11, dh_core_text_write_11, dh_core_ro_write_11,
+	  dh_core_patch_pointer_11, dh_core_probe_11 },
+	{ dh_core_rw_12, dh_core_text_write_12, dh_core_ro_write_12,
+	  dh_core_patch_pointer_12, dh_core_probe_12 },
+	{ dh_core_rw_13, dh_core_text_write_13, dh_core_ro_write_13,
+	  dh_core_patch_pointer_13, dh_core_probe_13 },
+	{ dh_core_rw_14, dh_core_text_write_14, dh_core_ro_write_14,
+	  dh_core_patch_pointer_14, dh_core_probe_14 },
+	{ dh_core_rw_15, dh_core_text_write_15, dh_core_ro_write_15,
+	  dh_core_patch_pointer_15, dh_core_probe_15 },
 };
 
 /* ---- init / fini -------------------------------------------------------- */

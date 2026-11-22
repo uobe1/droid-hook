@@ -29,7 +29,7 @@ droid_hook-y := \
 # without the runtime adapter.
 RUNTIME_CORE_HDR := $(wildcard $(DNSK_CORE_INC)/dnsk_core.h)
 ifneq ($(strip $(RUNTIME_CORE_HDR)),)
-droid_hook-y += runtime/dh_core_backend.o
+droid_hook-y += runtime/dh_core_backend.o runtime/dh_ro_routes.o
 ccflags-y += -I$(DNSK_CORE_INC) -I$(src)/runtime
 # dh_module.c then also runs the runtime split-path self-test against a mock
 # core API.  The macro is what keeps that code (and the core header include)

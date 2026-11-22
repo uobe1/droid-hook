@@ -474,6 +474,23 @@ class DhInsnTest(unittest.TestCase):
 
     # ---- argument and class validation ----
 
+    # ---- public pair entry and out-length relocation ----
+
+    def test_public_pair_entry_matches_encoder(self):
+        d = run('pair_public')
+        self.assertEqual(d['pair_public_ret'], 0)
+        # Same case as add_sh0 in the seam test: base moves 0x20000000 ->
+        # 0x30000000, so the ADD keeps imm12=0x20 and only the page changes.
+        self.assertEqual(d['pair_public_follow'], 0x91008022)
+        self.assertEqual(d['pair_public_null'], -22)
+
+    def test_relocate_out_reports_length_and_cap(self):
+        d = run('reloc_out')
+        self.assertEqual(d['reloc_out_ret'], 0)
+        self.assertEqual(d['reloc_out_nr'], 1)
+        self.assertEqual(d['reloc_out_cap'], -28)   # DH_E_NOSPC
+        self.assertEqual(d['reloc_out_nr_after_cap'], 99)
+
     def test_relocate_rejects_bad_args_and_unknown_class(self):
         d = run('reloc_bad')
         self.assertEqual(d['r_null_src'], -22)

@@ -28,6 +28,7 @@ TESTS    := $(sort $(wildcard tests/host/test_*.py))
 KDIR     ?= /lib/modules/$(shell uname -r)/build
 AOSP     ?= /usr/local/share/aosp-6.12.30
 LIB_SRCS := $(sort $(wildcard src/*.c))
+RUNTIME_SRCS := $(sort $(wildcard runtime/*.c))
 
 # Optional path to droid-lkm-suite's core headers, e.g.
 #   DNSK_CORE_INC=/path/to/droid-lkm-suite/core/include
@@ -81,10 +82,22 @@ runtime-check:
 		exit 1; }
 	@test -f "$(DNSK_CORE_INC)/dnsk_core.h" || { \
 		echo "runtime-check: $(DNSK_CORE_INC)/dnsk_core.h not found" >&2; exit 1; }
-	$(CC) -std=gnu11 -D__KERNEL__ -fsyntax-only -Iinclude -Iruntime \
-		-I$(DNSK_CORE_INC) -I$(AOSP)/include -I$(AOSP)/arch/arm64/include \
-		runtime/dh_core_backend.c
-	@echo "runtime-check: runtime/dh_core_backend.c ok against $(DNSK_CORE_INC)"
+	@set -e; for f in $(RUNTIME_SRCS); do \
+		printf '  %-32s' "$$f"; \
+		case "$$f" in \
+		runtime/dh_ro_routes.c) \
+			# Its kernel body needs generated asm headers (cpucap-defs.h) \
+			# that the AOSP header snapshot does not ship; the DDK build \
+			# in CI is its compile gate.  Check the host stub here. \
+			$(CC) -std=c11 -fsyntax-only -Iinclude -Iruntime "$$f" \
+			&& echo "host-stub ok (kernel body gated by DDK build)";; \
+		*) \
+			$(CC) -std=gnu11 -D__KERNEL__ -fsyntax-only -Iinclude -Iruntime \
+				-I$(DNSK_CORE_INC) -I$(AOSP)/include \
+				-I$(AOSP)/arch/arm64/include "$$f" && echo ok;; \
+		esac || exit 1; \
+	done
+	@echo "runtime-check: runtime TUs ok against $(DNSK_CORE_INC) (routes kernel body: DDK build)"
 
 clean:
 	rm -rf $(BUILDD)

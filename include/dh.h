@@ -62,8 +62,10 @@ typedef uint64_t u64;
  * The route is chosen per transaction step.  ALIAS is preferred because it
  * leaves the original PTE untouched; PTE is the KernelPatch hotpatch path;
  * FIXMAP mirrors arm64 patch_map(); DMA is the EL2/Stage-2 fallback from the
- * prior-art survey.  Each has the same post-write contract: dsb(ish),
- * icache flush when the target is executable, TLB flush, read-back verify.
+ * prior-art survey and is intentionally fail-closed in a normal LKM (there is
+ * no EL2/Stage-2 control and no guaranteed DMA engine).  Each implemented
+ * route has the same post-write contract: dsb(ish), icache flush when the
+ * target is executable, TLB flush, read-back verify.
  */
 enum dh_route {
 	DH_ROUTE_ALIAS = 1,
@@ -259,6 +261,35 @@ int dh_txn_rollback(struct dh_ctx *ctx);
 int dh_insn_gen_absolute_jump(u32 *out, void *target);
 int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc,
 		     size_t nr);
+/*
+ * dh_insn_relocate_out() - relocate with an explicit output length
+ * @dst_cap: capacity of @dst in u32 words
+ * @out_nr: receives the number of words written to @dst
+ *
+ * The current relocator is 1:1 (it never expands one instruction into
+ * several), but the caller-supplied capacity and out-length keep hook
+ * trampolines from hard-coding "4".  Returns %DH_E_NOSPC when @dst_cap is
+ * smaller than @nr; @out_nr is set only on success.
+ */
+int dh_insn_relocate_out(const u32 *src, u32 *dst, size_t dst_cap,
+			 size_t *out_nr, void *src_pc, void *dst_pc,
+			 size_t nr);
+
+/*
+ * dh_insn_retarget_pair() - re-encode one ADRP + ADD/LDR pair
+ * @adrp: the ADRP instruction word
+ * @follow: the ADD/LDR instruction word that follows it
+ * @adrp_pc: address at which @adrp executes
+ * @old_base: base of the array the pair referenced
+ * @new_base: base the array is being moved to
+ * @out: receives [re-encoded ADRP, re-encoded ADD/LDR]
+ *
+ * This is the public form of the pair re-encoder that dh_scan_refs() uses as
+ * its fail-closed preflight, so callers can apply the exact same words to
+ * their own trampolines instead of copying the encoder.
+ */
+int dh_insn_retarget_pair(u32 adrp, u32 follow, void *adrp_pc,
+			  void *old_base, void *new_base, u32 out[2]);
 int dh_scan_refs(struct dh_ctx *ctx, void *old_base, size_t old_len,
 		 void *new_base, void **sites, size_t max_sites);
 int dh_patch_text_batch(struct dh_ctx *ctx, void **addrs, u32 **insns,

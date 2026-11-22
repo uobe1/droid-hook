@@ -451,14 +451,28 @@ int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc,
 	return DH_OK;
 }
 
+int dh_insn_relocate_out(const u32 *src, u32 *dst, size_t dst_cap,
+			 size_t *out_nr, void *src_pc, void *dst_pc,
+			 size_t nr)
+{
+	int ret;
+
+	if (out_nr == NULL)
+		return DH_E_INVAL;
+	if (nr > dst_cap)
+		return DH_E_NOSPC;
+	ret = dh_insn_relocate(src, dst, src_pc, dst_pc, nr);
+	if (ret == DH_OK)
+		*out_nr = nr;
+	return ret;
+}
+
 /* ------------------------------------------------------------------------- */
 /* ADRP + follower pair re-encoding.                                          */
 /*                                                                            */
-/* dh.h has no public entry point that can express "re-encode these two words */
-/* together", and the header is frozen for this task.  The pair encoder is     */
-/* therefore static and consumed by dh_scan_refs() as a retargetability        */
-/* preflight: a reference that cannot be re-encoded for @new_base fails the    */
-/* scan instead of being returned as a site the caller could not patch.        */
+/* The same encoder is used by dh_scan_refs() as a retargetability preflight   */
+/* and is exposed as dh_insn_retarget_pair() so callers can apply the exact    */
+/* words to their own trampolines.                                            */
 /* ------------------------------------------------------------------------- */
 
 /**
@@ -543,6 +557,17 @@ static int insn_pair_retarget(u32 adrp, u32 follow, u64 adrp_pc,
 	}
 	*out_adrp = adrp_set_imm_pages(adrp, page_delta);
 	return DH_OK;
+}
+
+int dh_insn_retarget_pair(u32 adrp, u32 follow, void *adrp_pc,
+			  void *old_base, void *new_base, u32 out[2])
+{
+	if (out == NULL)
+		return DH_E_INVAL;
+	return insn_pair_retarget(adrp, follow, (u64)(uintptr_t)adrp_pc,
+				  (u64)(uintptr_t)old_base,
+				  (u64)(uintptr_t)new_base,
+				  &out[0], &out[1]);
 }
 
 #ifdef DH_INS_TEST_SEAM

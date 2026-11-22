@@ -25,7 +25,10 @@
 #include <linux/errno.h>
 #include <linux/kprobes.h>
 #include <linux/mm.h>
+#include <linux/set_memory.h>
+#include <linux/vmalloc.h>
 #include "dh_core_backend.h"
+#include "dh_ro_routes.h"
 #endif
 
 static int selftest;
@@ -42,6 +45,10 @@ MODULE_PARM_DESC(selftest, "run the Droid-Hook self-test at load, refuse to load
 static int require_core;
 module_param(require_core, int, 0444);
 MODULE_PARM_DESC(require_core, "require dnsk_core ABI 5 and run a real rw self-test");
+
+static int hooktest;
+module_param(hooktest, int, 0444);
+MODULE_PARM_DESC(hooktest, "hook a real kernel function and exercise ALIAS/PTE/FIXMAP routes");
 #endif
 
 /* ---- exported contract ---- */
@@ -59,6 +66,8 @@ EXPORT_SYMBOL_GPL(dh_txn_commit);
 EXPORT_SYMBOL_GPL(dh_txn_rollback);
 EXPORT_SYMBOL_GPL(dh_insn_gen_absolute_jump);
 EXPORT_SYMBOL_GPL(dh_insn_relocate);
+EXPORT_SYMBOL_GPL(dh_insn_relocate_out);
+EXPORT_SYMBOL_GPL(dh_insn_retarget_pair);
 EXPORT_SYMBOL_GPL(dh_scan_refs);
 EXPORT_SYMBOL_GPL(dh_patch_text_batch);
 EXPORT_SYMBOL_GPL(dh_hook_install);
@@ -445,6 +454,18 @@ static int dh_core_rw_u64(struct dnsk_core_api *api, u16 opcode, void *addr,
 	return req.ret == 0 ? DH_OK : req.ret;
 }
 
+static void *dh_kprobe_addr(const char *name)
+{
+	struct kprobe kp = { .symbol_name = name };
+	void *addr;
+
+	if (register_kprobe(&kp) != 0)
+		return NULL;
+	addr = (void *)kp.addr;
+	unregister_kprobe(&kp);
+	return addr;
+}
+
 static int dh_core_bind(void)
 {
 	typedef struct dnsk_core_api *(*core_get_fn)(u16, u16);
@@ -461,19 +482,12 @@ static int dh_core_bind(void)
 
 	/* __symbol_get() only searches the builtin __ksymtab (Linux 6.12
 	 * kernel/module/main.c:1314-1338), so a module-exported symbol must be
-	 * resolved through kallsyms; register_kprobe does that for us and is
-	 * available because CONFIG_KPROBES=y.  Missing core still fails closed. */
-	{
-		struct kprobe kp = { .symbol_name = "dnsk_core_get" };
-
-		ret = register_kprobe(&kp);
-		if (ret != 0) {
-			pr_err("DH_CORE_GET=err:%d (kprobe)\n", ret);
-			pr_err("DH_SELFTEST_FAIL:core_get_missing\n");
-			return ret;
-		}
-		get = (core_get_fn)kp.addr;
-		unregister_kprobe(&kp);
+	 * resolved through kallsyms; dh_kprobe_addr() does that and is available
+	 * because CONFIG_KPROBES=y.  Missing core still fails closed. */
+	get = (core_get_fn)dh_kprobe_addr("dnsk_core_get");
+	if (get == NULL) {
+		pr_err("DH_SELFTEST_FAIL:core_get_missing\n");
+		return -ENOENT;
 	}
 	api = get(DNSK_CORE_ABI, (u16)sizeof(struct dnsk_core_api));
 	if (IS_ERR(api)) {
@@ -536,6 +550,156 @@ static void dh_core_unbind(void)
 	module_put(dh_core_api->owner);
 	dh_core_api = NULL;
 	dh_core_bound = 0;
+}
+
+static u64 dh_hooktest_hits;
+
+static noinline unsigned int dh_hooktest_replacement(unsigned long j)
+{
+	(void)j;
+	dh_hooktest_hits++;
+	return 0x5a5a5a5aU;
+}
+
+static int dh_route_check(const char *marker, void *addr, const u8 *pat,
+			  size_t len, enum dh_route route)
+{
+	int ret;
+
+	ret = dh_ro_route_write(addr, pat, len, route);
+	if (ret != DH_OK) {
+		pr_err("DH_SELFTEST_FAIL:%s\n", marker);
+		return ret;
+	}
+	if (memcmp(addr, pat, len) != 0) {
+		pr_err("DH_SELFTEST_FAIL:%s\n", marker);
+		return DH_E_VERIFY;
+	}
+	pr_info("%s\n", marker);
+	return DH_OK;
+}
+
+static int dh_run_route_selftest(void)
+{
+	void *page;
+	u8 pat[128];
+	int i, ret;
+
+	page = vmalloc(2 * PAGE_SIZE);
+	if (page == NULL)
+		return -ENOMEM;
+	memset(page, 0xaa, 2 * PAGE_SIZE);
+	ret = set_memory_ro((unsigned long)page, 2);
+	if (ret != 0) {
+		vfree(page);
+		return ret;
+	}
+	for (i = 0; i < (int)sizeof(pat); i++)
+		pat[i] = (u8)(0x11 + i);
+	ret = dh_route_check("DH_ROUTE_ALIAS_OK", (u8 *)page + 100, pat,
+			     sizeof(pat), DH_ROUTE_ALIAS);
+	if (ret == DH_OK) {
+		for (i = 0; i < (int)sizeof(pat); i++)
+			pat[i] = (u8)(0x22 + i);
+		ret = dh_route_check("DH_ROUTE_PTE_OK", (u8 *)page + 100,
+				     pat, sizeof(pat), DH_ROUTE_PTE);
+	}
+	set_memory_rw((unsigned long)page, 2);
+	vfree(page);
+	return ret;
+}
+
+static int dh_self_rw(struct dh_rw_req *req)
+{
+	if (req == NULL || req->addr == NULL || req->len == 0)
+		return DH_E_INVAL;
+	if (req->opcode == DNSK_RW_READ) {
+		if (req->dst == NULL)
+			return DH_E_INVAL;
+		memcpy(req->dst, req->addr, req->len);
+		return DH_OK;
+	}
+	if (req->opcode == DNSK_RW_WRITE) {
+		if (req->src == NULL)
+			return DH_E_INVAL;
+		memcpy(req->addr, req->src, req->len);
+		return DH_OK;
+	}
+	return DH_E_OPNOTSUPP;
+}
+
+static int dh_self_patch_pointer(void *target, void *value)
+{
+	(void)target;
+	(void)value;
+	return DH_E_OPNOTSUPP;
+}
+
+static int dh_self_write(void *addr, const void *src, size_t len,
+			 enum dh_route route)
+{
+	return dh_ro_route_write(addr, src, len, route);
+}
+
+static void *dh_self_probe(const char *name)
+{
+	return dh_kprobe_addr(name);
+}
+
+static int dh_run_hooktest(void)
+{
+	static struct dh_ctx hook_ctx;
+	static struct dh_backend hook_be;
+	unsigned int (*fn)(unsigned long);
+	struct dh_hook hook;
+	void *target;
+	unsigned int original, intercepted, restored;
+	int ret;
+
+	memset(&hook_be, 0, sizeof(hook_be));
+	hook_be.rw = dh_self_rw;
+	hook_be.patch_pointer = dh_self_patch_pointer;
+	hook_be.text_write = dh_self_write;
+	hook_be.ro_write = dh_self_write;
+	hook_be.probe = dh_self_probe;
+	hook_be.icache_flush = dh_st_flush;
+	hook_be.tlb_flush = dh_st_flush;
+	hook_be.quiesce_begin = dh_st_quiesce_begin;
+	hook_be.quiesce_end = dh_st_quiesce_end;
+	hook_be.name = "dh_selftest_routes";
+	hook_be.abi = DH_ABI;
+
+	ret = dh_ctx_init(&hook_ctx, &hook_be, "hooktest");
+	DH_ST_CHECK(ret == DH_OK, "hook_ctx");
+	ret = dh_run_route_selftest();
+	DH_ST_CHECK(ret == DH_OK, "hook_routes");
+
+	target = dh_kprobe_addr("jiffies_to_msecs");
+	DH_ST_CHECK(target != NULL, "hook_target");
+	fn = (unsigned int (*)(unsigned long))target;
+	original = fn(1000);
+
+	dh_hooktest_hits = 0;
+	ret = dh_hook_install(&hook_ctx, "hooktest:jiffies", target,
+			      (void *)dh_hooktest_replacement, &hook);
+	DH_ST_CHECK(ret == DH_OK, "hook_install");
+
+	intercepted = fn(1000);
+	DH_ST_CHECK(intercepted == 0x5a5a5a5aU, "hook_intercept");
+	DH_ST_CHECK(dh_hooktest_hits > 0, "hook_intercept");
+	pr_info("DH_HOOKTEST_INTERCEPT_OK ret=%u hits=%llu\n", intercepted,
+		dh_hooktest_hits);
+
+	ret = dh_hook_uninstall(&hook_ctx, &hook);
+	DH_ST_CHECK(ret == DH_OK, "hook_uninstall");
+	restored = fn(1000);
+	DH_ST_CHECK(restored == original, "hook_restore");
+	pr_info("DH_HOOKTEST_RESTORED ret=%u original=%u\n", restored,
+		original);
+	pr_info("DH_HOOKTEST_OK\n");
+
+	dh_ctx_fini(&hook_ctx);
+	return DH_OK;
 }
 #endif /* DH_WITH_RUNTIME */
 
@@ -637,6 +801,13 @@ static int __init dh_module_init(void)
 	ret = dh_core_bind();
 	if (ret != 0)
 		return ret;
+	if (hooktest) {
+		ret = dh_run_hooktest();
+		if (ret != 0) {
+			dh_core_unbind();
+			return ret;
+		}
+	}
 #endif
 	pr_info("droid_hook: loaded (abi %d)\n", DH_ABI);
 	return 0;
