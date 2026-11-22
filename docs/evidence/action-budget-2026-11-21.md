@@ -72,3 +72,21 @@
   `require_core=1` 真 rw 通过 (`DH_CORE_GET=ok abi=5`, jiffies, write/read,
   `DH_SELFTEST_CORE_OK`), 卸载后 core 引用回 0, 已恢复 ABI3.
 - 真机操作 0 Action; 当前 flush 后计数 **3/9**.
+
+## 2026-11-22 功能开发轮 (四项功能 + 真实功能测试)
+
+窗口 `[02:05Z, 05:08Z]` 内 7 次, 未超 9:
+
+| # | 时间 (UTC) | run | 结果 |
+|---|---|---|---|
+| 1 | 02:43:57 | `44977429920` build | success |
+| 2 | 02:45:29 | `44977545035` qemu | failure (Unknown symbol set_memory_*) |
+| 3 | ~02:47 | `44977723599` build | success (kprobe 修复后) |
+| 4 | ~02:47 | `44977854459` qemu | failure (仍 Unknown symbol: 直接调用点) |
+| 5 | ~02:56 | `44978446775` qemu | failure (hook_install: 真实序言含 HINT/STP) |
+| 6 | 03:02:57 | `44978822467` qemu | failure (自检仍断言 NOP 被拒) |
+| 7 | 03:05:50 | `44979050211` qemu | **success** (全部 marker) |
+
+- 每个变更集失败后只修 1 次再重试, 无第三次连发; 真机复跑 0 Action.
+- 说明: 第 2 与第 4 次失败同属"未导出符号"这一类, 第一次修复不完整（只改调用实现、
+  未消除 `dh_module.c` 的直接调用），第二次才彻底消除 undef 导入。已在证据中如实记录。

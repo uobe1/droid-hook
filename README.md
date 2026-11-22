@@ -1,6 +1,6 @@
 # Droid-Hook
 
-状态: **库层 + 运行时适配 + preflight/probe 已实现; host 90 项通过; `droid_hook.ko` 在 DDK
+状态: **库层 + 运行时适配 + preflight/probe 已实现; host 93 项通过; `droid_hook.ko` 在 DDK
 构建成功; QEMU 门控通过并执行了 runtime 分割路径 (`DH_SELFTEST_RUNTIME_OK` /
 `CHUNKS=3`, run `44911364668`, mock core); runtime 链接经 CI `nm` 断言 (run
 `44910310411`); 真机 ksud 加载/卸载已验证 (`DH_SELFTEST_OK` / `RUNTIME_OK`, 无残留);
@@ -14,10 +14,12 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
 | 项 | 状态 |
 |---|---|
 | 仓库 | https://github.com/uobe1/droid-hook (public, 默认分支 `main`) |
-| host 门禁 `make check` | 90 项 / 6 suites / 7 TUs 全绿 |
+| host 门禁 `make check` | 93 项 / 6 suites / 8 TUs 全绿 |
 | 内核语法代理 `make kcheck` | 6 个库层 TU 全 ok |
 | 内核模块构建 | **已验证**: CI DDK run `44875690763` 产出 `droid_hook.ko` (290216 B, `modinfo -F name`=`droid_hook`, vermagic `6.12.76-4k SMP preempt mod_unload modversions aarch64`), artifact `droid-hook-android16-6.12`; 同 commit 还有一次未记录的成功 run `44876857725` |
-| QEMU 门控 | **已验证**: run `44911364668` (head `0bbca25`), `image` 1m17s + `boot` 16s; 串口 `DH_SELFTEST_OK` + `DH_SELFTEST_RUNTIME_OK` + `CHUNKS=3`, `lsmod` 计数 0, 无 sysfs/kallsyms 残留, 失败签名零匹配 |
+| QEMU 门控 | **已验证**: run `44979050211` (head `a23bdd4`); 除 `DH_SELFTEST_*` 外还输出 `DH_ROUTE_ALIAS_OK`/`DH_ROUTE_PTE_OK`/`DH_HOOKTEST_INTERCEPT_OK`/`DH_HOOKTEST_RESTORED`, `lsmod` 0、失败签名零匹配 |
+| 真实功能验证 | **已验证 (QEMU + 真机)**: hook `jiffies_to_msecs` → sentinel `0x5A5A5A5A` + `hits=1`；卸载后 `ret=4000` 恢复原值；只读页 ALIAS/PTE 各写入 128B 并读回一致。证据: [hooktest-2026-11-22](./docs/evidence/hooktest-2026-11-22.md) |
+| RO 路由 | ALIAS/PTE **已实现并实测**；FIXMAP 走 core；**DMA fail-closed (`DH_E_OPNOTSUPP`)**，普通 LKM 无 EL2/Stage-2 与保证 dmaengine，记为未验证 |
 | 真机加载/卸载 | **已验证 (2026-11-21, 本项目首次在 beryl 上真实 insmod/rmmod)**: `ksud insmod … selftest=1` → `DH_SELFTEST_OK`; 最新 339488B 产物另含设备端 `DH_SELFTEST_RUNTIME_OK` + `CHUNKS=3`; 该 ksud 无 `rmmod` 子命令, 用 `/system/bin/rmmod`(toybox) → `lsmod` 0、sysfs 无残留、告警扫描 0; 设备 6.12.30-android16. 证据: [device-gate-2026-11-21](./docs/evidence/device-gate-2026-11-21.md) |
 | runtime 层内核构建 | **已验证**: build run `44910310411` 的 `nm` 4 符号; qemu/真机 selftest 执行分割/恢复/回滚 (**mock core**) |
 | 真 core 路由 (ABI5) | **已验证 (2026-11-21)**: `dnsk_core abi=5` 临时加载, `DH_CORE_GET=ok abi=5 size=80`, `jiffies` 两次读 `4323111291,4323111291`, 写读回模块内 `u64` `0x1122334455667788`, `DH_SELFTEST_CORE_OK`; 卸载后 core 引用回 0, 设备已恢复 ABI3 core. 证据: [real-core-routing-2026-11-21](./docs/evidence/real-core-routing-2026-11-21.md) |
@@ -26,7 +28,7 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
 
 **已验证 (有 run id / 日志为证)**
 
-- `make check` 90 项全绿、`make kcheck` 6 TU 全 ok (本地)
+- `make check` 93 项全绿、`make kcheck` 6 TU 全 ok、`make runtime-check` 2 个 runtime TU ok (本地)
 - CI DDK 真实构建 `droid_hook.ko`: run `44875690763`, head `f4e952f`, host job 11s +
   build job 1m11s (总墙钟 06:28:18Z→06:29:47Z), `modinfo -F name`=`droid_hook`,
   vermagic `6.12.76-4k SMP preempt mod_unload modversions aarch64`, artifact 134772 B.
@@ -78,7 +80,22 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
   vermagic/CRC/未定义符号三类 dmesg 错误均为 0 (布局由加载器按 BTF 适配). 证据:
   [device-gate-2026-11-21](./docs/evidence/device-gate-2026-11-21.md)
 
+- 真实函数拦截/恢复（QEMU + 真机，run `44979050211` / 设备同一 `.ko`）：hook
+  `jiffies_to_msecs` → 返回 sentinel `0x5A5A5A5A`（`ret=1515870810`）且 `hits=1`；
+  `dh_hook_uninstall` 后再调用 → `ret=4000 original=4000`。marker
+  `DH_HOOKTEST_INTERCEPT_OK` / `DH_HOOKTEST_RESTORED` 两处均出现
+- ALIAS / PTE 路由在**只读** vmalloc 页上真实写入 128B 并 `memcmp` 读回一致
+  （`DH_ROUTE_ALIAS_OK` / `DH_ROUTE_PTE_OK`，QEMU + 真机）
+- 新的公开 API 与 relo 长度契约由 host 测例覆盖（`test_public_pair_entry_matches_encoder`、
+  `test_relocate_out_reports_length_and_cap`、`test_prfm_literal_is_retargeted_like_other_literals`），
+  host 门禁 93 项全绿
+
 **未验证 / 已知边界**
+
+- **DMA 路由未验证**：普通 LKM 无 EL2/Stage-2、无保证的 dmaengine 通道，实现为
+  fail-closed `DH_E_OPNOTSUPP`；不做假成功，也不算通过
+- hook 测试用模块内 helper backend（`rw`=memcpy、写入走 ALIAS/PTE），**与真 core
+  `api->rw` 未在同一次加载中合并验证**（真 core 路由有单独证据）
 
 - 设备**默认**仍是 `dnsk_core` ABI 3; 真 core 路由是在临时加载 suite ci-fast 的 ABI5
   core 时验证的, 测试后已恢复 ABI3. 日常状态不代表 ABI5 常驻.
@@ -119,7 +136,8 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
 | `src/dh_hook.c` | 函数级 trampoline | 覆盖前 4 条指令 + relo 区 + 跳回第 5 条; key 与 target 双重唯一; 地址仲裁; before 正序 / after 逆序 / skip_origin; 卸载逆序且在 quiesce 窗口内 |
 | `src/dh_shadow.c` | `<obj,id>` 侧表 | 不改父对象 layout; get-or-alloc 幂等; 延迟回收至最后一个引用 |
 | `src/dh_preflight.c` | 预检与保护探测 | `dh_preflight` 校验 ctx/backend/abi/未决事务; `dh_probe_protection` 以同字节写 + 读回校验探测 RO 路由, 读/写/校验失败原样返回真实 errno |
-| `runtime/dh_core_backend.c` | ABI 5 适配 | `rw`/`patch_pointer`/`resolve` 映射; magic/abi 校验; `F_TEXT`/`F_RO` 走会睡眠的 patch 后端; 数据路径 `flags=0` 不进 stop_machine |
+| `runtime/dh_core_backend.c` | ABI 5 适配 | `rw`/`patch_pointer`/`resolve` 映射; magic/abi 校验; `F_TEXT`/`F_RO` 走会睡眠的 patch 后端; 数据路径 `flags=0` 不进 stop_machine; 16 槽 trampoline |
+| `runtime/dh_ro_routes.c` | RO 写入路由 | ALIAS = 目标页 `vmap` 可写别名写入; PTE = kprobe 解析 `set_memory_rw/ro` 后改写 PTE 再恢复; FIXMAP 交 core; **DMA fail-closed `DH_E_OPNOTSUPP`**; 写完 `flush_icache_range` |
 
 ### 指令编码的两个实证结论
 
@@ -133,7 +151,7 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
 ## 验证
 
 - `make check` 全绿: 库层 TU 以生产参数(`-std=c11 -Wall -Wextra -Werror`)零 warning 编译,
-  6 套 host 单测共 **90 项**: contract 6 / rw+txn 12 / insn 19 / hook 19 / preflight 10 / runtime 24
+  6 套 host 单测共 **93 项**: contract 6 / rw+txn 12 / insn 22 / hook 19 / preflight 10 / runtime 24
 - `make kcheck` 全绿: 6 个库层 TU 在 `-D__KERNEL__` 下用 AOSP 头
   (`/usr/local/share/aosp-6.12.30`)逐个语法编译通过, 证明库层不偷用 libc 头
 - 关键断言做过变异验证(故意改坏实现 → 测试必须失败 → 还原后 `cmp` 字节一致):
@@ -170,15 +188,17 @@ hotpatch / inline hook / kstorage 与上游 livepatch / static_call / text_poke 
 - `runtime/` 已接入 `DNSK_CORE_INC` 并经 CI `nm` 断言真实链接 (run `44910310411`),
   runtime 分割/恢复/回滚已由 QEMU 与真机 (mock core) 执行; **真实 core ABI 5 路由**
   已由临时 ABI5 core 验证 (读 jiffies + 写读回), 但 **真实 quiesce 窗口仍未验证**
-- 4 条 RO 写入路由(ALIAS / PTE / FIXMAP / DMA)目前只有 `FIXMAP` 经 core 的
-  `F_RO` 后端真实存在; 其余三条是契约占位, 适配层尚未区分
-- `dh_insn` 的成对重编码是内部助手 + `dh_scan_refs` 的 fail-closed 预检,
-  **没有公开入口把重编码后的指令交给调用方**(需要改 `dh.h`, 属 ABI 变更)
-- `dh_hook_install` 固定按 4 条原始指令预留 relo 槽, 依赖
-  "relocate 不会把一条指令展开成多条"; 若将来支持 MOVZ/MOVK 序列, 需要
-  `dh.h` 增加 out-len 参数
-- 运行时适配用固定 4 槽 trampoline 解决"backend 回调无 userdata"的多实例隔离,
-  超过 4 个 backend 实例会返回 `DH_E_NOSPC`
+- RO 路由现状: **ALIAS / PTE 已真实实现并实测** (`runtime/dh_ro_routes.c`)；FIXMAP 走
+  core 的 `F_RO`；**DMA 是 fail-closed `DH_E_OPNOTSUPP`**（无 EL2/Stage-2、无保证的
+  dmaengine 通道），设备侧也**未验证**——记为未验证项，不算通过
+- `dh_insn_retarget_pair()` **已公开**（`dh.h`），与 `dh_scan_refs()` 用同一编码器，
+  host 测例锁定输出字
+- `dh_hook_install` **已改为按 `dh_insn_relocate_out()` 报告的实际长度**放回跳（容量
+  `DH_RELO_INSNS`=32，不足返回 `DH_E_NOSPC`），不再固定第 4 槽
+- 运行时适配的 trampoline 静态槽 **4 → 16**（`DH_CORE_MAX_BOUND`，构建期可覆盖）；
+  超过 16 个 backend 实例返回 `DH_E_NOSPC`，这是**已文档化的设计上限**，不是待修缺陷
+- relocator 新契约：已知 PC 相对类越界 fail-closed；HINT 空间与其余位置无关指令按位复制
+  （这是 hook 真实函数序言的前提）；该契约由 host 测例与加载期自检双重锁定
 - 设计证据里的 6 个待决定点(KPM 迁移节奏, 运行时载体, 许可证边界, EL2 面策略,
   force 卸载语义, 性能基线口径)仍待用户决定
 
