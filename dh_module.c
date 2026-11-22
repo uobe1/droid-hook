@@ -553,6 +553,16 @@ static void dh_core_unbind(void)
 
 static u64 dh_hooktest_hits;
 
+/* Real, exported kernel functions with small prologues; the gate reports the
+ * first one whose first four instructions the relocator can handle. */
+static const char *const dh_hooktest_targets[] = {
+	"jiffies_to_msecs",
+	"jiffies_to_usecs",
+	"msecs_to_jiffies",
+	"ktime_get_real_seconds",
+	"ktime_get_mono_fast_ns",
+};
+
 static noinline unsigned int dh_hooktest_replacement(unsigned long j)
 {
 	(void)j;
@@ -651,9 +661,9 @@ static int dh_run_hooktest(void)
 	static struct dh_backend hook_be;
 	unsigned int (*fn)(unsigned long);
 	struct dh_hook hook;
-	void *target;
-	unsigned int original, intercepted, restored;
-	int ret;
+	void *target = NULL;
+	unsigned int original = 0, intercepted, restored;
+	int i, ret;
 
 	memset(&hook_be, 0, sizeof(hook_be));
 	hook_be.rw = dh_self_rw;
@@ -673,28 +683,47 @@ static int dh_run_hooktest(void)
 	ret = dh_run_route_selftest();
 	DH_ST_CHECK(ret == DH_OK, "hook_routes");
 
-	target = dh_kprobe_addr("jiffies_to_msecs");
-	DH_ST_CHECK(target != NULL, "hook_target");
-	fn = (unsigned int (*)(unsigned long))target;
-	original = fn(1000);
-
-	dh_hooktest_hits = 0;
-	ret = dh_hook_install(&hook_ctx, "hooktest:jiffies", target,
-			      (void *)dh_hooktest_replacement, &hook);
-	DH_ST_CHECK(ret == DH_OK, "hook_install");
+	/*
+	 * Not every exported function has a relocatable prologue: the first four
+	 * instructions must be position independent or a class the relocator
+	 * encodes.  Try candidates in order and log why each one is refused, so
+	 * the gate reports the real reason instead of a bare failure.
+	 */
+	for (i = 0; i < (int)ARRAY_SIZE(dh_hooktest_targets); i++) {
+		target = dh_kprobe_addr(dh_hooktest_targets[i]);
+		if (target == NULL) {
+			pr_warn("DH_HOOKTEST_SKIP %s: not resolvable\n",
+				dh_hooktest_targets[i]);
+			continue;
+		}
+		fn = (unsigned int (*)(unsigned long))target;
+		original = fn(1000);
+		dh_hooktest_hits = 0;
+		ret = dh_hook_install(&hook_ctx, dh_hooktest_targets[i], target,
+				      (void *)dh_hooktest_replacement, &hook);
+		if (ret == DH_OK)
+			break;
+		pr_warn("DH_HOOKTEST_SKIP %s: hook_install ret=%d\n",
+			dh_hooktest_targets[i], ret);
+	}
+	DH_ST_CHECK(i < (int)ARRAY_SIZE(dh_hooktest_targets), "hook_target");
+	if (ret != DH_OK) {
+		pr_err("DH_SELFTEST_FAIL:hook_install ret=%d\n", ret);
+		return ret;
+	}
 
 	intercepted = fn(1000);
 	DH_ST_CHECK(intercepted == 0x5a5a5a5aU, "hook_intercept");
 	DH_ST_CHECK(dh_hooktest_hits > 0, "hook_intercept");
-	pr_info("DH_HOOKTEST_INTERCEPT_OK ret=%u hits=%llu\n", intercepted,
-		dh_hooktest_hits);
+	pr_info("DH_HOOKTEST_INTERCEPT_OK target=%s ret=%u hits=%llu\n",
+		dh_hooktest_targets[i], intercepted, dh_hooktest_hits);
 
 	ret = dh_hook_uninstall(&hook_ctx, &hook);
 	DH_ST_CHECK(ret == DH_OK, "hook_uninstall");
 	restored = fn(1000);
 	DH_ST_CHECK(restored == original, "hook_restore");
-	pr_info("DH_HOOKTEST_RESTORED ret=%u original=%u\n", restored,
-		original);
+	pr_info("DH_HOOKTEST_RESTORED target=%s ret=%u original=%u\n",
+		dh_hooktest_targets[i], restored, original);
 	pr_info("DH_HOOKTEST_OK\n");
 
 	dh_ctx_fini(&hook_ctx);

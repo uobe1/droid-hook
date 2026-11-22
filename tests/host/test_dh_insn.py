@@ -491,12 +491,29 @@ class DhInsnTest(unittest.TestCase):
         self.assertEqual(d['reloc_out_cap'], -28)   # DH_E_NOSPC
         self.assertEqual(d['reloc_out_nr_after_cap'], 99)
 
-    def test_relocate_rejects_bad_args_and_unknown_class(self):
+    def test_relocate_rejects_bad_args_and_unencodable_literals(self):
         d = run('reloc_bad')
         self.assertEqual(d['r_null_src'], -22)
         self.assertEqual(d['r_null_dst'], -22)
         self.assertEqual(d['r_nr0'], -22)
+        # A known PC-relative class that cannot reach the target fails
+        # closed instead of being copied or truncated.
         self.assertEqual(d['r_unknown'], -95)
+        # A position-independent word is copied verbatim (new contract):
+        # only known PC-relative classes can break under relocation.
+        self.assertEqual(d['r_verbatim'], 0)
+        self.assertEqual(d['verbatim_dst'], 0xD2800000)
+
+    def test_prfm_literal_is_retargeted_like_other_literals(self):
+        d = run('reloc_bad')
+        self.assertEqual(d['r_prfm'], 0)
+        # imm19 at bits[23:5], same field for every literal form.  Moving the
+        # word from 0x1000 to 0x2000 must keep the absolute target at 0x1000.
+        imm = (d['prfm_dst'] >> 5) & 0x7FFFF
+        if imm & (1 << 18):
+            imm -= 1 << 19
+        self.assertEqual(0x2000 + imm * 4, 0x1000)
+        self.assertEqual(d['prfm_dst'] & 0xFF00001F, 0xD8000000)
 
 
 if __name__ == '__main__':

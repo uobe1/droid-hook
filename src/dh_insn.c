@@ -378,6 +378,30 @@ static int relocate_pc_rel(u32 insn, u32 *dst, u64 src_pc, u64 dst_pc)
 	return DH_E_OPNOTSUPP;
 }
 
+/* ARM ARM "HINT" encoding space: 1101 0101 0000 0011 0010 ooooo 11111.
+ * NOP, BTI and the PAC/AUT hint forms live here.  They are position
+ * independent and have no PC-relative field, so the relocator copies them
+ * verbatim.  The mask keeps bits[11:5] (the opcode field) free. */
+static int insn_is_hint(u32 insn)
+{
+	return (insn & 0xFFFFF01Fu) == 0xD503201Fu;
+}
+
+/* PC-relative classes this file knows and refuses when they cannot be
+ * re-encoded (out of range).  Membership here is what makes "copy verbatim"
+ * safe below: every other instruction is position independent. */
+static int insn_is_known_pc_rel(u32 insn)
+{
+	return (insn & ADRP_OP_MASK) == ADRP_OP ||
+	       (insn & ADR_OP_MASK) == ADR_OP ||
+	       (insn & BRANCH_OP_MASK) == B_OP ||
+	       (insn & BRANCH_OP_MASK) == BL_OP ||
+	       (insn & BCOND_OP_MASK) == BCOND_OP ||
+	       (insn & CBZ_OP_MASK) == CBZ_OP ||
+	       (insn & TBZ_OP_MASK) == TBZ_OP ||
+	       (insn & LDR_LIT_OP_MASK) == LDR_LIT_OP;
+}
+
 /**
  * dh_insn_relocate() - retarget one instruction from src_pc to dst_pc
  * @src: original instruction words (at src_pc)
@@ -446,7 +470,18 @@ int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc,
 			dst[i] = ldst_set_imm_off(insn, ldst_imm_off(insn));
 			continue;
 		}
-		return DH_E_OPNOTSUPP;
+		if (insn_is_hint(insn)) {
+			dst[i] = insn;
+			continue;
+		}
+		/* A known PC-relative class that the encoder refused is out of
+		 * range: fail closed instead of copying a broken reference. */
+		if (insn_is_known_pc_rel(insn))
+			return DH_E_OPNOTSUPP;
+		/* Everything else has no PC-relative field (MOVZ/MOVK, register
+		 * ALU, STP/LDP, MRS/MSR, ...), so copying the word verbatim
+		 * preserves behaviour at the trampoline address. */
+		dst[i] = insn;
 	}
 	return DH_OK;
 }

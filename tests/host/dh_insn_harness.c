@@ -408,15 +408,28 @@ int main(int argc, char **argv)
 	}
 
 	if (strcmp(cmd, "reloc_bad") == 0) {
-		/* Bad arguments are errors, not silent success; an unknown
-		 * instruction class is refused rather than copied. */
-		u32 s = 0x00000000u;
-		u32 d = 0;
+		/* Bad arguments are errors, not silent success.  A literal form
+		 * the relocator cannot encode is refused (copying it would point
+		 * the trampoline at the wrong data); a position-independent word
+		 * such as MOVZ is copied verbatim. */
+		u32 far = 0x14000000u;	/* b +0, moved 1 TiB away: unencodable */
+		u32 movz = 0xD2800000u;	/* movz x0, #0 */
+		u32 prfm = 0xD8000000u;	/* prfm (literal), imm19 = 0 */
+		u32 d = 0, kept = 0, prfm_dst = 0;
 
 		print_int("r_null_src", dh_insn_relocate(NULL, &d, NULL, NULL, 1));
-		print_int("r_null_dst", dh_insn_relocate(&s, NULL, NULL, NULL, 1));
-		print_int("r_nr0", dh_insn_relocate(&s, &d, NULL, NULL, 0));
-		print_int("r_unknown", dh_insn_relocate(&s, &d, NULL, NULL, 1));
+		print_int("r_null_dst", dh_insn_relocate(&far, NULL, NULL, NULL, 1));
+		print_int("r_nr0", dh_insn_relocate(&far, &d, NULL, NULL, 0));
+		print_int("r_unknown",
+			  dh_insn_relocate(&far, &d, NULL,
+					   (void *)(uintptr_t)(1ULL << 40), 1));
+		print_int("r_verbatim",
+			  dh_insn_relocate(&movz, &kept, NULL, NULL, 1));
+		print_u32("verbatim_dst", kept);
+		print_int("r_prfm",
+			  dh_insn_relocate(&prfm, &prfm_dst, (void *)0x1000,
+					   (void *)0x2000, 1));
+		print_u32("prfm_dst", prfm_dst);
 		print_int("inval", DH_E_INVAL);
 		print_int("opnotsupp", DH_E_OPNOTSUPP);
 		return 0;
