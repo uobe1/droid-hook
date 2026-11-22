@@ -769,8 +769,19 @@ static int dh_run_selftest(void)
 	ret = dh_insn_relocate(&b_in, &b_out, (void *)0x1000, (void *)0x2000, 1);
 	DH_ST_CHECK(ret == DH_OK, "relocate_b_ret");
 	DH_ST_CHECK(b_out == 0x17FFFD00u, "relocate_b_encoding");
+	/* A NOP is in the HINT space: position independent, so it is copied
+	 * verbatim rather than refused.  A PC-relative class that cannot reach
+	 * the target must still fail closed. */
 	ret = dh_insn_relocate(&nop_in, &nop_out, (void *)0x1000, (void *)0x2000, 1);
-	DH_ST_CHECK(ret == DH_E_OPNOTSUPP, "relocate_nop_rejected");
+	DH_ST_CHECK(ret == DH_OK, "relocate_nop_verbatim");
+	DH_ST_CHECK(nop_out == nop_in, "relocate_nop_verbatim");
+	{
+		u32 far_in = 0x14000000u, far_out = 0;
+
+		ret = dh_insn_relocate(&far_in, &far_out, NULL,
+				       (void *)(uintptr_t)(1ULL << 40), 1);
+		DH_ST_CHECK(ret == DH_E_OPNOTSUPP, "relocate_far_rejected");
+	}
 
 	/* 3. a transaction over the in-module backend must read back what it
 	 * wrote and leave the undo log clean after commit. */
