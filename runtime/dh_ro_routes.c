@@ -19,8 +19,8 @@
 
 #ifdef __KERNEL__
 
+#include <linux/kprobes.h>
 #include <linux/mm.h>
-#include <linux/set_memory.h>
 #include <linux/string.h>
 #include <linux/vmalloc.h>
 #include <asm/cacheflush.h>
@@ -54,6 +54,22 @@ static int dh_ro_alias_write(void *addr, const void *src, size_t len)
 	return DH_OK;
 }
 
+typedef int (*dh_set_memory_fn)(unsigned long addr, int numpages);
+static dh_set_memory_fn dh_set_memory_rw_fn;
+static dh_set_memory_fn dh_set_memory_ro_fn;
+
+static void *dh_route_symbol(const char *name)
+{
+	struct kprobe kp = { .symbol_name = name };
+	void *addr;
+
+	if (register_kprobe(&kp) != 0)
+		return NULL;
+	addr = (void *)kp.addr;
+	unregister_kprobe(&kp);
+	return addr;
+}
+
 static int dh_ro_pte_write(void *addr, const void *src, size_t len)
 {
 	unsigned long start = (unsigned long)addr & PAGE_MASK;
@@ -62,11 +78,19 @@ static int dh_ro_pte_write(void *addr, const void *src, size_t len)
 	int npages = (int)((end - start) >> PAGE_SHIFT);
 	int ret;
 
-	ret = set_memory_rw(start, npages);
+	if (dh_set_memory_rw_fn == NULL)
+		dh_set_memory_rw_fn = (dh_set_memory_fn)
+			dh_route_symbol("set_memory_rw");
+	if (dh_set_memory_ro_fn == NULL)
+		dh_set_memory_ro_fn = (dh_set_memory_fn)
+			dh_route_symbol("set_memory_ro");
+	if (dh_set_memory_rw_fn == NULL || dh_set_memory_ro_fn == NULL)
+		return DH_E_OPNOTSUPP;
+	ret = dh_set_memory_rw_fn(start, npages);
 	if (ret != 0)
 		return ret;
 	memcpy(addr, src, len);
-	ret = set_memory_ro(start, npages);
+	ret = dh_set_memory_ro_fn(start, npages);
 	return ret != 0 ? ret : DH_OK;
 }
 
