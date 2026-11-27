@@ -7,10 +7,12 @@
  * (dh.h) and src/ must never include a core header.
  *
  * In a real kernel build we use the authoritative core/include/dnsk_core.h.
- * Host builds have no kernel headers, so this header supplies the byte-for-byte
- * equivalent declarations used by the selftest harness.  The two must stay in
- * sync; dh_core_backend.c only ever uses the fields below, never a private
- * offset or a guessed signature.
+ * Host builds have no kernel headers, so this header supplies layout-equivalent
+ * declarations used by the selftest harness.  It is not byte-for-byte: the
+ * parameter types mirror the authoritative header (including its struct
+ * pointers), and the offset/size asserts below pin the ABI on LP64.  The two
+ * must stay in sync; dh_core_backend.c only ever uses the fields below, never a
+ * private offset or a guessed signature.
  */
 
 #ifdef __KERNEL__
@@ -64,21 +66,37 @@ struct dnsk_rw_req {
 };
 
 struct module;
+struct dnsk_hook_req;
+struct dnsk_feature_desc;
 
 struct dnsk_core_api {
 	u32 magic;
 	u16 abi;
 	u16 size;
 	void *(*resolve)(const char *name);
-	int (*hook_add)(const void *req);
+	int (*hook_add)(const struct dnsk_hook_req *req);
 	int (*hook_del)(const char *key);
-	int (*feature_add)(const void *desc);
+	int (*feature_add)(const struct dnsk_feature_desc *desc);
 	int (*feature_del)(const char *name);
 	void (*log)(int level, const char *fmt, ...);
 	int (*patch_pointer)(void *target, void *value);
 	int (*rw)(struct dnsk_rw_req *req);
 	struct module *owner;
 };
+
+#if UINTPTR_MAX == UINT64_MAX
+/* Pin the ABI the host harness mocks against the authoritative header's LP64
+ * layout.  A field reorder or insert must fail the build here, not silently
+ * mis-dispatch in the harness while the kernel module stays correct. */
+_Static_assert(sizeof(struct dnsk_rw_req) == 72, "dnsk_rw_req size changed");
+_Static_assert(offsetof(struct dnsk_rw_req, lock) == 32, "dnsk_rw_req.lock moved");
+_Static_assert(offsetof(struct dnsk_rw_req, len) == 40, "dnsk_rw_req.len moved");
+_Static_assert(offsetof(struct dnsk_rw_req, ret) == 64, "dnsk_rw_req.ret moved");
+_Static_assert(sizeof(struct dnsk_core_api) == 80, "dnsk_core_api size changed");
+_Static_assert(offsetof(struct dnsk_core_api, hook_add) == 16, "dnsk_core_api.hook_add moved");
+_Static_assert(offsetof(struct dnsk_core_api, rw) == 64, "dnsk_core_api.rw moved");
+_Static_assert(offsetof(struct dnsk_core_api, owner) == 72, "dnsk_core_api.owner moved");
+#endif
 
 #endif /* __KERNEL__ */
 

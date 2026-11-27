@@ -1,3 +1,13 @@
+<!-- Shheeel By Zgod -->
+
+The shared rules are canonical in
+`~/.claude/projects/-root-droid-kernel/memory/MEMORY.md` (`~/.memory/` and the
+qoder copy are symlinks to it); the workspace state is
+`/root/droid-kernel/docs/STATUS.md`
+You must read them before any work
+
+<!-- Tag by Zgod, Project manual memory -->
+
 # AGENTS.md — droid-hook
 
 Independent project: reusable inline-hook framework on the suite's core RW ABI 5.
@@ -56,5 +66,10 @@ marker 命名建议 `DH_*_INTERCEPT_OK` / `DH_*_RESTORED`，缺一即未完成�
 ## 与 suite 的关系
 
 `runtime/` 依赖 suite 的 `core/include/dnsk_core.h`（ABI 5），构建时用
-`DNSK_CORE_INC=/root/droid-lkm-suite/core/include`。suite 的 core ABI 变化时这里必须跟进，
+`DNSK_CORE_INC=/root/droid-kernel/droid-lkm-suite/core/include`。suite 的 core ABI 变化时这里必须跟进，
 但不要把 suite 的代码复制进来。
+
+## 读源码要落地
+
+读到内核/上游源码并据此做判断时，先把结论写进 `docs/evidence/` 或 `docs/notes/`：
+**语义 + `文件:行号` + 为什么这样决定**。只留在对话里等于没做——下一个人得重读同样的代码。

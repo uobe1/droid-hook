@@ -37,7 +37,7 @@ Droid-Hook 为独立 public 仓库 (https://github.com/uobe1/droid-hook, 默认�
   修复后重派成功. 这说明 CI 真的编译了 `dh_module.c`, 不是走过场.
 - 未记录的 run `44876857725` (head `fcaff43`, 06:42:58Z→06:44:15Z, host 8s + build 1m01s,
   success) 已补记进 [build-gate-2026-11-21](./docs/evidence/build-gate-2026-11-21.md)
-- `make runtime-check DNSK_CORE_INC=/root/droid-lkm-suite/core/include` 通过: `runtime/dh_core_backend.c`
+- `make runtime-check DNSK_CORE_INC=/root/droid-kernel/droid-lkm-suite/core/include` 通过: `runtime/dh_core_backend.c`
   在 `-D__KERNEL__` 下用真实 core 头 `dnsk_core.h` 编译干净. 该检查立刻抓到一处真实缺口:
   适配层引用的 `DNSK_RW_MAX` 只存在于 host 仿造头, 公开 core 头只在注释里写"at most 256"
   (`core/include/dnsk_core.h:291`), 实际常量在实现里 (`core/dnsk_rw.c:46`, 校验于 `:69`).
