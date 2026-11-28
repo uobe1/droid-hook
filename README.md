@@ -23,8 +23,6 @@ static_call / text_poke 的设计, 自行实现库与运行时, 不引入 Kernel
 | 真实拦截/恢复 | `jiffies_to_msecs` 被替换后恢复原返回值 |
 | RO 路由 | ALIAS / PTE 在只读页写入并读回一致 |
 
-详细门控记录在 `docs/evidence/` (本地资料).
-
 ### 未验证 / 已知边界
 
 - DMA 路由 fail-closed `DH_E_OPNOTSUPP`: 普通 LKM 无 EL2/Stage-2, 也没有保证的
@@ -118,6 +116,7 @@ make module KDIR=/path/to/kernel/tree
 make module KDIR=/path/to/kernel/tree \
      DNSK_CORE_INC=/path/to/droid-lkm-suite/core/include
                     # 额外把 runtime/dh_core_backend.o 编入 droid_hook.ko
+make lint           # 与 CI 同一套 lint 面 (shellcheck/ruff/clang-format/yamllint/actionlint/cppcheck)
 make clean
 ```
 
@@ -127,7 +126,3 @@ make clean
   `$(error)` 硬失败
 - `dh_module.c` 依赖 `<asm/cpucap-defs.h>` 等生成头, 只能由真实内核构建验证;
   本机用 `make kcheck` 代理库层 TU 的内核干净度
-
-## 证据
-
-门控 run id, 日志与逐项结论在 `docs/evidence/` (本地资料, 不随仓库分发).

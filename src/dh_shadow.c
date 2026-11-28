@@ -2,9 +2,8 @@
 /*
  * Droid-Hook <obj,id> side table.
  *
- * Same family as upstream klp_shadow, KernelPatch kstorage and KPM task_ext
- * (docs/evidence/rw-memory-mutation-research.md section 2.1-C and section
- * 4.1): the parent object's layout is never changed, the extra state lives in
+ * Same family as upstream klp_shadow, KernelPatch kstorage and KPM task_ext:
+ * the parent object's layout is never changed, the extra state lives in
  * a separately allocated item keyed by (object address, id), and freeing is
  * delayed so an in-flight reader cannot observe freed memory.
  *

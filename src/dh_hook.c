@@ -2,11 +2,10 @@
 /*
  * Droid-Hook function-level trampoline and before/after chain.
  *
- * Shape follows docs/evidence/droid-hook-design-research.md section 2.1: cover
- * the first four instructions of the target with an absolute jump, keep the
- * displaced instructions in a separate relo area that ends with a jump back to
- * the fifth instruction, and drive the chain with before-in-order /
- * after-in-reverse plus skip_origin.
+ * Shape: cover the first four instructions of the target with an absolute
+ * jump, keep the displaced instructions in a separate relo area that ends with
+ * a jump back to the fifth instruction, and drive the chain with
+ * before-in-order / after-in-reverse plus skip_origin.
  *
  * The library owns no global state through dh.h (struct dh_ctx has no registry
  * field), so the bounded install registry lives here.  It is deliberately

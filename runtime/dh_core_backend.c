@@ -12,8 +12,7 @@
  * assertions make a future divergence a compile error rather than a silent
  * mis-read of kernel memory.
  *
- * Data path semantics (from core/include/dnsk_core.h and
- * docs/notes/On-core-rw-and-cgpids-2026-11-14.md):
+ * Data path semantics (from core/include/dnsk_core.h):
  *   READ/WRITE/XCHG/CAS without F_TEXT/F_RO use a direct copy or hardware
  *   atomics and DO NOT enter stop_machine, so they are safe in lock-held
  *   context.  F_TEXT/F_RO route through the sleeping patch backend

@@ -37,12 +37,18 @@ RUNTIME_SRCS := $(sort $(wildcard runtime/*.c))
 # packaging only.  Kbuild rejects a non-empty path without dnsk_core.h.
 DNSK_CORE_INC ?=
 
-.PHONY: all check compile test kcheck module module-clean runtime-check clean
+.PHONY: all check compile test kcheck module module-clean runtime-check lint clean
 
 all: check
 
 check: compile test
 	@echo "droid-hook: host gate clean ($(words $(SRCS)) TUs, $(words $(TESTS)) suites)"
+
+# Lint gate mirroring CI's lint steps (shellcheck/ruff/clang-format/yamllint/
+# actionlint/cppcheck).  Run with check/kcheck/runtime-check before a dispatch;
+# a green local run means the CI lint steps pass.
+lint:
+	sh scripts/lint.sh
 
 compile: $(OBJS)
 
