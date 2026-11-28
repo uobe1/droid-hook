@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: GPL-3.0-only
 """Host selftest for the Droid-Hook arm64 instruction layer.
 
 Builds tests/host/dh_insn_harness.c together with the real src/dh_insn.c and

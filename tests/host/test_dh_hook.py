@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: GPL-3.0-only
 """Host selftest for the Droid-Hook trampoline and shadow layers.
 
 Builds src/dh_hook.c, src/dh_shadow.c and dh_hook_harness.c into one shared

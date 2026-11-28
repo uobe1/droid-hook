@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * Pure-host mock backend for the Droid-Hook RW / transaction selftest.
  *

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: GPL-3.0-only
 """Host selftest for the core RW ABI 2 -> struct dh_backend adapter.
 
 Compiles droid-hook/runtime/dh_core_backend.c together with a mock-core

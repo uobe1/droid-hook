@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: GPL-3.0-only
 """Host selftest for the Droid-Hook RW wrapper and transaction rollback layer.
 
 Drives the real dh_* implementations through a pure-host mock backend
