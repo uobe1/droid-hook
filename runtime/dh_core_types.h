@@ -31,8 +31,8 @@ typedef uint64_t u64;
 #define DNSK_CORE_ABI 2
 
 #define DNSK_RW_F_LOCKED (1u << 0)
-#define DNSK_RW_F_TEXT   (1u << 1)
-#define DNSK_RW_F_RO     (1u << 2)
+#define DNSK_RW_F_TEXT (1u << 1)
+#define DNSK_RW_F_RO (1u << 2)
 
 #define DNSK_RW_MAX 256
 
@@ -93,7 +93,8 @@ _Static_assert(offsetof(struct dnsk_rw_req, lock) == 32, "dnsk_rw_req.lock moved
 _Static_assert(offsetof(struct dnsk_rw_req, len) == 40, "dnsk_rw_req.len moved");
 _Static_assert(offsetof(struct dnsk_rw_req, ret) == 64, "dnsk_rw_req.ret moved");
 _Static_assert(sizeof(struct dnsk_core_api) == 80, "dnsk_core_api size changed");
-_Static_assert(offsetof(struct dnsk_core_api, hook_install) == 16, "dnsk_core_api.hook_install moved");
+_Static_assert(offsetof(struct dnsk_core_api, hook_install) == 16,
+	       "dnsk_core_api.hook_install moved");
 _Static_assert(offsetof(struct dnsk_core_api, rw) == 64, "dnsk_core_api.rw moved");
 _Static_assert(offsetof(struct dnsk_core_api, owner) == 72, "dnsk_core_api.owner moved");
 #endif

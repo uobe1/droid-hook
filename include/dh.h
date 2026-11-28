@@ -137,10 +137,8 @@ struct dh_rw_req {
 struct dh_backend {
 	int (*rw)(struct dh_rw_req *req);
 	int (*patch_pointer)(void *target, void *value);
-	int (*text_write)(void *addr, const void *src, size_t len,
-			  enum dh_route route);
-	int (*ro_write)(void *addr, const void *src, size_t len,
-			enum dh_route route);
+	int (*text_write)(void *addr, const void *src, size_t len, enum dh_route route);
+	int (*ro_write)(void *addr, const void *src, size_t len, enum dh_route route);
 	void *(*probe)(const char *name);
 	void *(*alloc)(size_t size);
 	void (*free)(const void *p);
@@ -271,16 +269,14 @@ void *dh_probe(struct dh_ctx *ctx, const char *name);
 /* ---- transaction ---- */
 
 int dh_txn_begin(struct dh_ctx *ctx);
-int dh_txn_record(struct dh_ctx *ctx, void *addr, size_t len,
-		  enum dh_route route);
+int dh_txn_record(struct dh_ctx *ctx, void *addr, size_t len, enum dh_route route);
 int dh_txn_commit(struct dh_ctx *ctx);
 int dh_txn_rollback(struct dh_ctx *ctx);
 
 /* ---- instruction-level patch ---- */
 
 int dh_insn_gen_absolute_jump(u32 *out, void *target);
-int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc,
-		     size_t nr);
+int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc, size_t nr);
 /*
  * dh_insn_relocate_out() - relocate with an explicit output length
  * @dst_cap: capacity of @dst in u32 words
@@ -291,9 +287,8 @@ int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc,
  * trampolines from hard-coding "4".  Returns %DH_E_NOSPC when @dst_cap is
  * smaller than @nr; @out_nr is set only on success.
  */
-int dh_insn_relocate_out(const u32 *src, u32 *dst, size_t dst_cap,
-			 size_t *out_nr, void *src_pc, void *dst_pc,
-			 size_t nr);
+int dh_insn_relocate_out(const u32 *src, u32 *dst, size_t dst_cap, size_t *out_nr, void *src_pc,
+			 void *dst_pc, size_t nr);
 
 /*
  * dh_insn_retarget_pair() - re-encode one ADRP + ADD/LDR pair
@@ -308,17 +303,16 @@ int dh_insn_relocate_out(const u32 *src, u32 *dst, size_t dst_cap,
  * its fail-closed preflight, so callers can apply the exact same words to
  * their own trampolines instead of copying the encoder.
  */
-int dh_insn_retarget_pair(u32 adrp, u32 follow, void *adrp_pc,
-			  void *old_base, void *new_base, u32 out[2]);
-int dh_scan_refs(struct dh_ctx *ctx, void *old_base, size_t old_len,
-		 void *new_base, void **sites, size_t max_sites);
-int dh_patch_text_batch(struct dh_ctx *ctx, void **addrs, u32 **insns,
-			size_t *lens, size_t nr);
+int dh_insn_retarget_pair(u32 adrp, u32 follow, void *adrp_pc, void *old_base, void *new_base,
+			  u32 out[2]);
+int dh_scan_refs(struct dh_ctx *ctx, void *old_base, size_t old_len, void *new_base, void **sites,
+		 size_t max_sites);
+int dh_patch_text_batch(struct dh_ctx *ctx, void **addrs, u32 **insns, size_t *lens, size_t nr);
 
 /* ---- hook ---- */
 
-int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
-		    void *replacement, struct dh_hook *out);
+int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target, void *replacement,
+		    struct dh_hook *out);
 /**
  * dh_hook_install_origin() - install a hook and hand out the origin pre-publish
  * @ctx: library context
@@ -344,12 +338,11 @@ int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
  * checked indirect call to it fails, and the replacement must be built without
  * the check on that call (kernel __nocfi).
  */
-int dh_hook_install_origin(struct dh_ctx *ctx, const char *key, void *target,
-			   void *replacement, struct dh_hook *out,
-			   void **origin_out);
+int dh_hook_install_origin(struct dh_ctx *ctx, const char *key, void *target, void *replacement,
+			   struct dh_hook *out, void **origin_out);
 int dh_hook_uninstall(struct dh_ctx *ctx, struct dh_hook *hook);
-int dh_hook_wrap(struct dh_ctx *ctx, struct dh_hook *hook,
-		 int (*before)(void *fargs), int (*after)(void *fargs));
+int dh_hook_wrap(struct dh_ctx *ctx, struct dh_hook *hook, int (*before)(void *fargs),
+		 int (*after)(void *fargs));
 
 /**
  * dh_hook_origin() - callable relocated-origin block for a hook
@@ -370,8 +363,7 @@ void *dh_hook_origin(const struct dh_hook *hook);
 
 /* ---- shadow / side table ---- */
 
-struct dh_shadow_item *dh_shadow_get_or_alloc(struct dh_ctx *ctx, void *obj,
-					       u32 id, size_t size);
+struct dh_shadow_item *dh_shadow_get_or_alloc(struct dh_ctx *ctx, void *obj, u32 id, size_t size);
 int dh_shadow_free(struct dh_ctx *ctx, void *obj, u32 id);
 
 /* ---- protection probe / preflight ---- */

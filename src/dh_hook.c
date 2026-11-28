@@ -26,13 +26,13 @@
 #include <string.h>
 #endif
 
-#define DH_ORIGIN_INSNS		4
-#define DH_JUMP_INSNS		4
-#define DH_RELO_INSNS		32
-#define DH_WRAP_MAX		16
-#define DH_REG_MAX		16
-#define DH_INSN_BYTES		(DH_ORIGIN_INSNS * (size_t)sizeof(u32))
-#define DH_TRAMP_MAGIC		0x44485450U	/* "DHTP" */
+#define DH_ORIGIN_INSNS 4
+#define DH_JUMP_INSNS 4
+#define DH_RELO_INSNS 32
+#define DH_WRAP_MAX 16
+#define DH_REG_MAX 16
+#define DH_INSN_BYTES (DH_ORIGIN_INSNS * (size_t)sizeof(u32))
+#define DH_TRAMP_MAGIC 0x44485450U /* "DHTP" */
 
 struct dh_trampoline {
 	u32 origin[DH_ORIGIN_INSNS];
@@ -41,7 +41,7 @@ struct dh_trampoline {
 	size_t relo_len;
 	void *target;
 	void *replacement;
-	void *exec_origin;	/* backend alloc_exec block, or NULL */
+	void *exec_origin; /* backend alloc_exec block, or NULL */
 	u32 magic;
 };
 
@@ -139,8 +139,7 @@ static void dh_tramp_free(struct dh_ctx *ctx, void *p)
 		return;
 	dh_pool_acquire();
 	if (dh_in_pool(p, dh_tramp_pool, sizeof(dh_tramp_pool))) {
-		i = (size_t)(((const unsigned char *)p -
-			      (const unsigned char *)dh_tramp_pool) /
+		i = (size_t)(((const unsigned char *)p - (const unsigned char *)dh_tramp_pool) /
 			     sizeof(dh_tramp_pool[0]));
 		if (i < DH_REG_MAX) {
 			dh_tramp_used[i] = 0;
@@ -207,8 +206,7 @@ static void dh_chain_free(struct dh_ctx *ctx, void *p)
 		return;
 	dh_pool_acquire();
 	if (dh_in_pool(p, dh_chain_pool, sizeof(dh_chain_pool))) {
-		i = (size_t)(((const unsigned char *)p -
-			      (const unsigned char *)dh_chain_pool) /
+		i = (size_t)(((const unsigned char *)p - (const unsigned char *)dh_chain_pool) /
 			     sizeof(dh_chain_pool[0]));
 		if (i < DH_REG_MAX) {
 			dh_chain_used[i] = 0;
@@ -227,8 +225,7 @@ static int dh_reg_has_key(const char *key)
 
 	dh_pool_acquire();
 	for (i = 0; i < DH_REG_MAX; i++) {
-		if (dh_reg[i].used &&
-		    strncmp(dh_reg[i].key, key, DH_KEY_LEN) == 0) {
+		if (dh_reg[i].used && strncmp(dh_reg[i].key, key, DH_KEY_LEN) == 0) {
 			found = 1;
 			break;
 		}
@@ -267,8 +264,7 @@ static int dh_reg_claim(const char *key, void *target)
 	for (i = 0; i < DH_REG_MAX; i++) {
 		if (!dh_reg[i].used)
 			continue;
-		if (dh_reg[i].target == target ||
-		    strncmp(dh_reg[i].key, key, DH_KEY_LEN) == 0) {
+		if (dh_reg[i].target == target || strncmp(dh_reg[i].key, key, DH_KEY_LEN) == 0) {
 			ret = DH_E_BUSY;
 			goto out;
 		}
@@ -322,8 +318,7 @@ static void dh_reg_drop(const char *key, void *target)
  * or the error reported by the backend / transaction layer.
  */
 static int dh_hook_install_impl(struct dh_ctx *ctx, const char *key, void *target,
-				void *replacement, struct dh_hook *out,
-				void **origin_out)
+				void *replacement, struct dh_hook *out, void **origin_out)
 {
 	struct dh_trampoline *t;
 	struct dh_chain *c;
@@ -352,8 +347,7 @@ static int dh_hook_install_impl(struct dh_ctx *ctx, const char *key, void *targe
 	klen = strlen(key);
 	if (klen == 0 || klen >= DH_KEY_LEN)
 		return DH_E_INVAL;
-	if (!ctx->be->text_write || !ctx->be->quiesce_begin ||
-	    !ctx->be->quiesce_end)
+	if (!ctx->be->text_write || !ctx->be->quiesce_begin || !ctx->be->quiesce_end)
 		return DH_E_OPNOTSUPP;
 
 	/* Shared key namespace with dnsk_core's hook registry: a duplicate
@@ -414,13 +408,11 @@ static int dh_hook_install_impl(struct dh_ctx *ctx, const char *key, void *targe
 	 * back-jump goes right after them instead of at a hard-coded slot 4.
 	 * PC-relative rewrites are computed against the address the block will
 	 * actually execute at (relo_addr), not its temporary staging buffer. */
-	ret = dh_insn_relocate_out(origin, relo_dst,
-				   DH_RELO_INSNS - DH_JUMP_INSNS, &relo_nr,
+	ret = dh_insn_relocate_out(origin, relo_dst, DH_RELO_INSNS - DH_JUMP_INSNS, &relo_nr,
 				   target, relo_addr, DH_ORIGIN_INSNS);
 	if (ret)
 		goto fail_allocs;
-	ret = dh_insn_gen_absolute_jump(back,
-			(void *)((unsigned char *)target + DH_INSN_BYTES));
+	ret = dh_insn_gen_absolute_jump(back, (void *)((unsigned char *)target + DH_INSN_BYTES));
 	if (ret)
 		goto fail_allocs;
 	memcpy(&relo_dst[relo_nr], back, sizeof(back));
@@ -428,8 +420,7 @@ static int dh_hook_install_impl(struct dh_ctx *ctx, const char *key, void *targe
 	if (t->exec_origin) {
 		memcpy(t->exec_origin, relo_buf, t->relo_len * sizeof(u32));
 		if (ctx->be->icache_flush)
-			ctx->be->icache_flush(t->exec_origin,
-					      t->relo_len * sizeof(u32));
+			ctx->be->icache_flush(t->exec_origin, t->relo_len * sizeof(u32));
 	}
 	/* Hand out the callable origin before anything can make the entry live,
 	 * so a replacement reached the instant the jump lands never sees a NULL
@@ -449,8 +440,7 @@ static int dh_hook_install_impl(struct dh_ctx *ctx, const char *key, void *targe
 	 * not be executing the target while it is rewritten. */
 	published = 1;
 	ctx->be->quiesce_begin();
-	ret = ctx->be->text_write(target, t->jump, DH_INSN_BYTES,
-				  DH_ROUTE_ALIAS);
+	ret = ctx->be->text_write(target, t->jump, DH_INSN_BYTES, DH_ROUTE_ALIAS);
 	if (!ret && ctx->be->icache_flush)
 		ctx->be->icache_flush(target, DH_INSN_BYTES);
 	if (!ret) {
@@ -528,8 +518,8 @@ fail_claim:
  * Return: %DH_OK, %DH_E_INVAL, %DH_E_BUSY, %DH_E_NOSPC, %DH_E_OPNOTSUPP,
  * or the error reported by the backend / transaction layer.
  */
-int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
-		    void *replacement, struct dh_hook *out)
+int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target, void *replacement,
+		    struct dh_hook *out)
 {
 	return dh_hook_install_impl(ctx, key, target, replacement, out, NULL);
 }
@@ -548,12 +538,10 @@ int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
  * clears it before returning.  The origin block has no kCFI type hash, so a
  * call-through caller on a CFI kernel must suppress the check (dh.h contract).
  */
-int dh_hook_install_origin(struct dh_ctx *ctx, const char *key, void *target,
-			   void *replacement, struct dh_hook *out,
-			   void **origin_out)
+int dh_hook_install_origin(struct dh_ctx *ctx, const char *key, void *target, void *replacement,
+			   struct dh_hook *out, void **origin_out)
 {
-	return dh_hook_install_impl(ctx, key, target, replacement, out,
-				    origin_out);
+	return dh_hook_install_impl(ctx, key, target, replacement, out, origin_out);
 }
 
 /**
@@ -574,14 +562,12 @@ int dh_hook_uninstall(struct dh_ctx *ctx, struct dh_hook *hook)
 	struct dh_trampoline *t;
 	int ret;
 
-	if (!ctx || !ctx->be || !hook || !hook->installed ||
-	    !hook->trampoline || !hook->target)
+	if (!ctx || !ctx->be || !hook || !hook->installed || !hook->trampoline || !hook->target)
 		return DH_E_INVAL;
 	t = (struct dh_trampoline *)hook->trampoline;
 	if (t->magic != DH_TRAMP_MAGIC || t->target != hook->target)
 		return DH_E_INVAL;
-	if (!ctx->be->quiesce_begin || !ctx->be->quiesce_end ||
-	    !ctx->be->text_write)
+	if (!ctx->be->quiesce_begin || !ctx->be->quiesce_end || !ctx->be->text_write)
 		return DH_E_OPNOTSUPP;
 
 	ctx->be->quiesce_begin();
@@ -591,8 +577,7 @@ int dh_hook_uninstall(struct dh_ctx *ctx, struct dh_hook *hook)
 	ret = dh_txn_record(ctx, hook->target, DH_INSN_BYTES, DH_ROUTE_ALIAS);
 	if (ret)
 		goto out_rollback;
-	ret = ctx->be->text_write(hook->target, t->origin, DH_INSN_BYTES,
-				  DH_ROUTE_ALIAS);
+	ret = ctx->be->text_write(hook->target, t->origin, DH_INSN_BYTES, DH_ROUTE_ALIAS);
 	if (ret)
 		goto out_rollback;
 	if (ctx->be->icache_flush)
@@ -668,8 +653,8 @@ void *dh_hook_origin(const struct dh_hook *hook)
  *
  * Return: %DH_OK, %DH_E_INVAL, or %DH_E_NOSPC.
  */
-int dh_hook_wrap(struct dh_ctx *ctx, struct dh_hook *hook,
-		 int (*before)(void *fargs), int (*after)(void *fargs))
+int dh_hook_wrap(struct dh_ctx *ctx, struct dh_hook *hook, int (*before)(void *fargs),
+		 int (*after)(void *fargs))
 {
 	struct dh_chain *c;
 	u32 i;
@@ -704,8 +689,7 @@ int dh_hook_wrap(struct dh_ctx *ctx, struct dh_hook *hook,
  * Return: the first non-zero before result when skipped, else the origin
  * result, else %DH_OK.
  */
-int dh_hook_chain_run(struct dh_hook *hook, void *fargs,
-		      int (*origin)(void *fargs))
+int dh_hook_chain_run(struct dh_hook *hook, void *fargs, int (*origin)(void *fargs))
 {
 	struct dh_chain *c;
 	u32 i;

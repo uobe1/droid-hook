@@ -28,8 +28,7 @@ typedef int64_t s64;
  * pair re-encoder the production scanner uses, so these assertions cover
  * production code.  A production build never defines the macro.
  */
-int dh_ins_test_pair_retarget(u32 adrp, u32 follow, u64 adrp_pc,
-			      u64 old_base, u64 new_base,
+int dh_ins_test_pair_retarget(u32 adrp, u32 follow, u64 adrp_pc, u64 old_base, u64 new_base,
 			      u32 *out_adrp, u32 *out_follow);
 #endif
 
@@ -47,8 +46,7 @@ int dh_txn_begin(struct dh_ctx *ctx)
 	return DH_OK;
 }
 
-int dh_txn_record(struct dh_ctx *ctx, void *addr, size_t len,
-		  enum dh_route route)
+int dh_txn_record(struct dh_ctx *ctx, void *addr, size_t len, enum dh_route route)
 {
 	struct dh_undo_ent *e;
 
@@ -120,8 +118,7 @@ static void *fake_probe(const char *name)
 	return NULL;
 }
 
-static int fake_text_write(void *addr, const void *src, size_t len,
-			   enum dh_route route)
+static int fake_text_write(void *addr, const void *src, size_t len, enum dh_route route)
 {
 	(void)route;
 	if (g_fail_at >= 0 && g_text_writes == g_fail_at)
@@ -139,10 +136,10 @@ static int fake_text_write(void *addr, const void *src, size_t len,
 }
 
 static struct dh_backend g_be = {
-	.text_write = fake_text_write,
-	.probe = fake_probe,
-	.name = "host-harness",
-	.abi = DH_ABI,
+    .text_write = fake_text_write,
+    .probe = fake_probe,
+    .name = "host-harness",
+    .abi = DH_ABI,
 };
 
 static struct dh_ctx g_ctx;
@@ -270,11 +267,9 @@ int main(int argc, char **argv)
 		u32 dst_pos, dst_neg;
 		u64 spc = 0x40000000ULL;
 		u64 dpc = 0x40001000ULL; /* +1 page => delta shrinks by 1 */
-		int r1 = dh_insn_relocate(&src_pos, &dst_pos,
-					  (void *)(uintptr_t)spc,
+		int r1 = dh_insn_relocate(&src_pos, &dst_pos, (void *)(uintptr_t)spc,
 					  (void *)(uintptr_t)dpc, 1);
-		int r2 = dh_insn_relocate(&src_neg, &dst_neg,
-					  (void *)(uintptr_t)spc,
+		int r2 = dh_insn_relocate(&src_neg, &dst_neg, (void *)(uintptr_t)spc,
 					  (void *)(uintptr_t)dpc, 1);
 
 		print_int("r_pos", r1);
@@ -288,8 +283,7 @@ int main(int argc, char **argv)
 		/* Target page must be unchanged: +2 pages from 0x40000000 =
 		 * 0x40002000; from new PC 0x40001000 that is +1 page. */
 		print_u64("target_from_new_pc",
-			  (dpc & ~0xFFFULL) +
-			  ((u64)decode_adrp_pages(dst_pos) << 12));
+			  (dpc & ~0xFFFULL) + ((u64)decode_adrp_pages(dst_pos) << 12));
 		return 0;
 	}
 
@@ -336,8 +330,8 @@ int main(int argc, char **argv)
 		u32 src = mk_ldr_lit_x(64, 9);
 		u32 dst;
 		u64 spc = 0x1000ULL, dpc = 0x2000ULL;
-		int r = dh_insn_relocate(&src, &dst, (void *)(uintptr_t)spc,
-					 (void *)(uintptr_t)dpc, 1);
+		int r =
+		    dh_insn_relocate(&src, &dst, (void *)(uintptr_t)spc, (void *)(uintptr_t)dpc, 1);
 		s64 new_imm = (s64)((dst >> 5) & 0x7FFFF);
 
 		if (new_imm & (1 << 18))
@@ -358,20 +352,16 @@ int main(int argc, char **argv)
 		u32 dst;
 		u64 spc = 0x40000000ULL;
 		u64 far = spc + (1ULL << 33); /* 8 GiB away: page delta > 2^20 */
-		int r_adrp = dh_insn_relocate(&adrp, &dst,
-					      (void *)(uintptr_t)spc,
+		int r_adrp = dh_insn_relocate(&adrp, &dst, (void *)(uintptr_t)spc,
 					      (void *)(uintptr_t)far, 1);
 		u32 b = 0x14000000u | 0x1000u; /* B +#0x4000 */
-		int r_b = dh_insn_relocate(&b, &dst,
-					   (void *)(uintptr_t)spc,
+		int r_b = dh_insn_relocate(&b, &dst, (void *)(uintptr_t)spc,
 					   (void *)(uintptr_t)(spc + (2ULL << 27)), 1);
 		u32 lit = mk_ldr_lit_x(1, 9);
-		int r_lit = dh_insn_relocate(&lit, &dst,
-					     (void *)(uintptr_t)spc,
+		int r_lit = dh_insn_relocate(&lit, &dst, (void *)(uintptr_t)spc,
 					     (void *)(uintptr_t)(spc + (2ULL << 20)), 1);
 		/* A supported instruction with a small move must succeed. */
-		int r_ok = dh_insn_relocate(&adrp, &dst,
-					    (void *)(uintptr_t)spc,
+		int r_ok = dh_insn_relocate(&adrp, &dst, (void *)(uintptr_t)spc,
 					    (void *)(uintptr_t)(spc + 0x1000), 1);
 
 		print_int("r_adrp_out", r_adrp);
@@ -430,8 +420,7 @@ int main(int argc, char **argv)
 		g_probe_stext = (void *)(uintptr_t)g_text;
 		g_probe_etext = (void *)(uintptr_t)(g_text + 16);
 		memset(g_text, 0xD5, sizeof(g_text)); /* all NOP-ish */
-		n = dh_scan_refs(&g_ctx, (void *)(uintptr_t)0x40010000ULL, 64,
-				 NULL, sites, 4);
+		n = dh_scan_refs(&g_ctx, (void *)(uintptr_t)0x40010000ULL, 64, NULL, sites, 4);
 		print_int("n", n);
 		/* Bad arguments must be rejected, not reported as "0 sites". */
 		print_int("r_null", dh_scan_refs(&g_ctx, NULL, 64, NULL, sites, 4));
@@ -440,11 +429,11 @@ int main(int argc, char **argv)
 
 	if (strcmp(cmd, "batch") == 0) {
 		void *addrs[3];
-		u32 buf0[2] = { 0x11111111u, 0x22222222u };
-		u32 buf1[2] = { 0x33333333u, 0x44444444u };
-		u32 buf2[2] = { 0x55555555u, 0x66666666u };
-		u32 *insns[3] = { buf0, buf1, buf2 };
-		size_t lens[3] = { 8, 8, 8 };
+		u32 buf0[2] = {0x11111111u, 0x22222222u};
+		u32 buf1[2] = {0x33333333u, 0x44444444u};
+		u32 buf2[2] = {0x55555555u, 0x66666666u};
+		u32 *insns[3] = {buf0, buf1, buf2};
+		size_t lens[3] = {8, 8, 8};
 		int r;
 
 		emit("batch");
@@ -481,9 +470,9 @@ int main(int argc, char **argv)
 		 * The per-site read-back must turn that into DH_E_VERIFY, not a
 		 * silent success. */
 		void *addrs[1];
-		u32 buf[2] = { 0xDEADBEEFu, 0xFEEDFACEu };
-		u32 *insns[1] = { buf };
-		size_t lens[1] = { 8 };
+		u32 buf[2] = {0xDEADBEEFu, 0xFEEDFACEu};
+		u32 *insns[1] = {buf};
+		size_t lens[1] = {8};
 		int r;
 
 		emit("batch_verify");
@@ -503,9 +492,9 @@ int main(int argc, char **argv)
 		/* A batch must reject a caller-owned open transaction instead of
 		 * recording into it or rolling it back. */
 		void *addrs[1];
-		u32 buf[2] = { 0xABCDEF01u, 0x12345678u };
-		u32 *insns[1] = { buf };
-		size_t lens[1] = { 8 };
+		u32 buf[2] = {0xABCDEF01u, 0x12345678u};
+		u32 *insns[1] = {buf};
+		size_t lens[1] = {8};
 		int r, rb;
 
 		emit("batch_in_txn");
@@ -535,8 +524,7 @@ int main(int argc, char **argv)
 			insns[i] = &one;
 			lens[i] = 4;
 		}
-		r = dh_patch_text_batch(&g_ctx, addrs, insns, lens,
-					DH_MAX_BATCH + 1);
+		r = dh_patch_text_batch(&g_ctx, addrs, insns, lens, DH_MAX_BATCH + 1);
 		print_int("r_cap", r);
 		print_int("nospc", DH_E_NOSPC);
 		print_int("writes", g_text_writes);
@@ -549,22 +537,19 @@ int main(int argc, char **argv)
 		 * the trampoline at the wrong data); a position-independent word
 		 * such as MOVZ is copied verbatim. */
 		u32 far = 0x14000000u;	/* b +0, moved 1 TiB away: unencodable */
-		u32 movz = 0xD2800000u;	/* movz x0, #0 */
-		u32 prfm = 0xD8000000u;	/* prfm (literal), imm19 = 0 */
+		u32 movz = 0xD2800000u; /* movz x0, #0 */
+		u32 prfm = 0xD8000000u; /* prfm (literal), imm19 = 0 */
 		u32 d = 0, kept = 0, prfm_dst = 0;
 
 		print_int("r_null_src", dh_insn_relocate(NULL, &d, NULL, NULL, 1));
 		print_int("r_null_dst", dh_insn_relocate(&far, NULL, NULL, NULL, 1));
 		print_int("r_nr0", dh_insn_relocate(&far, &d, NULL, NULL, 0));
 		print_int("r_unknown",
-			  dh_insn_relocate(&far, &d, NULL,
-					   (void *)(uintptr_t)(1ULL << 40), 1));
-		print_int("r_verbatim",
-			  dh_insn_relocate(&movz, &kept, NULL, NULL, 1));
+			  dh_insn_relocate(&far, &d, NULL, (void *)(uintptr_t)(1ULL << 40), 1));
+		print_int("r_verbatim", dh_insn_relocate(&movz, &kept, NULL, NULL, 1));
 		print_u32("verbatim_dst", kept);
 		print_int("r_prfm",
-			  dh_insn_relocate(&prfm, &prfm_dst, (void *)0x1000,
-					   (void *)0x2000, 1));
+			  dh_insn_relocate(&prfm, &prfm_dst, (void *)0x1000, (void *)0x2000, 1));
 		print_u32("prfm_dst", prfm_dst);
 		print_int("inval", DH_E_INVAL);
 		print_int("opnotsupp", DH_E_OPNOTSUPP);
@@ -576,23 +561,19 @@ int main(int argc, char **argv)
 		 * edges: 2^20-1 and -2^20 must encode, 2^20 and -2^20-1 must be
 		 * refused instead of wrapped. */
 		const u64 p0 = 0x4000000000ULL;
-		static const s64 pages[] = { 0xFFFFF, 0x100000,
-					    -0x100000, -0x100001 };
-		static const char *const names[] = { "max", "over", "min",
-						    "under" };
+		static const s64 pages[] = {0xFFFFF, 0x100000, -0x100000, -0x100001};
+		static const char *const names[] = {"max", "over", "min", "under"};
 		u32 adrp = mk_adrp(0, 0);
 		size_t i;
 
 		for (i = 0; i < sizeof(pages) / sizeof(pages[0]); i++) {
 			u32 out = 0;
 			u64 dpc = (u64)((s64)p0 - pages[i] * 4096);
-			int r = dh_insn_relocate(&adrp, &out,
-						 (void *)(uintptr_t)p0,
+			int r = dh_insn_relocate(&adrp, &out, (void *)(uintptr_t)p0,
 						 (void *)(uintptr_t)dpc, 1);
 
 			printf("bound_%s_ret=%d\n", names[i], r);
-			printf("bound_%s_pages=%d\n", names[i],
-			       (int)decode_adrp_pages(out));
+			printf("bound_%s_pages=%d\n", names[i], (int)decode_adrp_pages(out));
 		}
 		return 0;
 	}
@@ -603,8 +584,8 @@ int main(int argc, char **argv)
 		u32 src = mk_ldr_lit_x(-64, 9);
 		u32 dst = 0;
 		u64 spc = 0x2000ULL, dpc = 0x1000ULL;
-		int r = dh_insn_relocate(&src, &dst, (void *)(uintptr_t)spc,
-					 (void *)(uintptr_t)dpc, 1);
+		int r =
+		    dh_insn_relocate(&src, &dst, (void *)(uintptr_t)spc, (void *)(uintptr_t)dpc, 1);
 		s64 imm = (s64)((dst >> 5) & 0x7FFFF);
 
 		if (imm & (1 << 18))
@@ -633,30 +614,21 @@ int main(int argc, char **argv)
 			u32 keep_expect;
 			s64 imm;
 		} cases[] = {
-			{ "cbz", 0x34000000u, 0x00FFFFE0u, 19, 0xFF00001Fu,
-			  0x34000000u, -64 },
-			{ "cbnz", 0x35000000u, 0x00FFFFE0u, 19, 0xFF00001Fu,
-			  0x35000000u, -64 },
-			{ "tbz", 0x36000000u, 0x0007FFE0u, 14, 0xFFF8001Fu,
-			  0x36000000u, -64 },
-			{ "tbnz", 0x37000000u, 0x0007FFE0u, 14, 0xFFF8001Fu,
-			  0x37000000u, -64 },
-			{ "ldr_simd_lit", 0x5C000000u, 0x00FFFFE0u, 19,
-			  0xFF00001Fu, 0x5C000000u, -64 },
+		    {"cbz", 0x34000000u, 0x00FFFFE0u, 19, 0xFF00001Fu, 0x34000000u, -64},
+		    {"cbnz", 0x35000000u, 0x00FFFFE0u, 19, 0xFF00001Fu, 0x35000000u, -64},
+		    {"tbz", 0x36000000u, 0x0007FFE0u, 14, 0xFFF8001Fu, 0x36000000u, -64},
+		    {"tbnz", 0x37000000u, 0x0007FFE0u, 14, 0xFFF8001Fu, 0x37000000u, -64},
+		    {"ldr_simd_lit", 0x5C000000u, 0x00FFFFE0u, 19, 0xFF00001Fu, 0x5C000000u, -64},
 		};
 		const u64 spc = 0x2000ULL, dpc = 0x1000ULL;
 		size_t i;
 
 		for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-			u32 insn = cases[i].base |
-				((((u32)cases[i].imm) << 5) &
-				 cases[i].imm_mask);
+			u32 insn = cases[i].base | ((((u32)cases[i].imm) << 5) & cases[i].imm_mask);
 			u32 dst = 0;
-			int ret = dh_insn_relocate(&insn, &dst,
-						   (void *)(uintptr_t)spc,
+			int ret = dh_insn_relocate(&insn, &dst, (void *)(uintptr_t)spc,
 						   (void *)(uintptr_t)dpc, 1);
-			s64 new_imm = sext_field((dst & cases[i].imm_mask) >> 5,
-						 cases[i].imm_bits);
+			s64 new_imm = sext_field((dst & cases[i].imm_mask) >> 5, cases[i].imm_bits);
 			u64 target = dpc + (u64)new_imm * 4;
 			u64 expect = spc + (u64)cases[i].imm * 4;
 
@@ -664,46 +636,39 @@ int main(int argc, char **argv)
 			printf("%s_dst=0x%08" PRIx32 "\n", cases[i].name, dst);
 			printf("%s_changed=%d\n", cases[i].name, dst != insn);
 			printf("%s_class_ok=%d\n", cases[i].name,
-			       (dst & cases[i].keep_mask) ==
-			       cases[i].keep_expect);
-			printf("%s_target=0x%016" PRIx64 "\n", cases[i].name,
-			       target);
-			printf("%s_expect=0x%016" PRIx64 "\n", cases[i].name,
-			       expect);
+			       (dst & cases[i].keep_mask) == cases[i].keep_expect);
+			printf("%s_target=0x%016" PRIx64 "\n", cases[i].name, target);
+			printf("%s_expect=0x%016" PRIx64 "\n", cases[i].name, expect);
 		}
 		return 0;
 	}
 
 #ifdef DH_INS_TEST_SEAM
 	if (strcmp(cmd, "pair_public") == 0) {
-		u32 out[2] = { 0, 0 };
+		u32 out[2] = {0, 0};
 		u32 adrp = mk_adrp(0x10000, 0);
 		u32 follow = mk_add(0x20, 0, 1, 2);
-		int ret = dh_insn_retarget_pair(
-			adrp, follow, (void *)(uintptr_t)0x10000000ULL,
-			(void *)(uintptr_t)0x20000000ULL,
-			(void *)(uintptr_t)0x30000000ULL, out);
+		int ret = dh_insn_retarget_pair(adrp, follow, (void *)(uintptr_t)0x10000000ULL,
+						(void *)(uintptr_t)0x20000000ULL,
+						(void *)(uintptr_t)0x30000000ULL, out);
 
 		printf("pair_public_ret=%d\n", ret);
 		printf("pair_public_adrp=0x%08" PRIx32 "\n", out[0]);
 		printf("pair_public_follow=0x%08" PRIx32 "\n", out[1]);
 		printf("pair_public_null=%d\n",
-		       dh_insn_retarget_pair(
-			       adrp, follow, (void *)(uintptr_t)0x10000000ULL,
-			       (void *)(uintptr_t)0x20000000ULL,
-			       (void *)(uintptr_t)0x30000000ULL, NULL));
+		       dh_insn_retarget_pair(adrp, follow, (void *)(uintptr_t)0x10000000ULL,
+					     (void *)(uintptr_t)0x20000000ULL,
+					     (void *)(uintptr_t)0x30000000ULL, NULL));
 		return 0;
 	}
 	if (strcmp(cmd, "reloc_out") == 0) {
 		u32 in = 0x14000000U; /* B +0 */
-		u32 out[4] = { 0, 0, 0, 0 };
+		u32 out[4] = {0, 0, 0, 0};
 		size_t nr = 99, nr0 = 99;
-		int ret = dh_insn_relocate_out(
-			&in, out, 4, &nr, (void *)(uintptr_t)0x1000ULL,
-			(void *)(uintptr_t)0x2000ULL, 1);
-		int cap = dh_insn_relocate_out(
-			&in, out, 0, &nr0, (void *)(uintptr_t)0x1000ULL,
-			(void *)(uintptr_t)0x2000ULL, 1);
+		int ret = dh_insn_relocate_out(&in, out, 4, &nr, (void *)(uintptr_t)0x1000ULL,
+					       (void *)(uintptr_t)0x2000ULL, 1);
+		int cap = dh_insn_relocate_out(&in, out, 0, &nr0, (void *)(uintptr_t)0x1000ULL,
+					       (void *)(uintptr_t)0x2000ULL, 1);
 
 		printf("reloc_out_ret=%d\n", ret);
 		printf("reloc_out_nr=%zu\n", nr);
@@ -724,88 +689,68 @@ int main(int argc, char **argv)
 			u64 old_base;
 			u64 new_base;
 		} cases[] = {
-			{ "add_sh0", mk_adrp(0x10000, 0), mk_add(0x20, 0, 1, 2),
-			  0x20000000ULL, 0x30000000ULL },
-			{ "add_sh0_shifted", mk_adrp(0x10000, 0),
-			  mk_add(0x20, 0, 1, 2), 0x20000000ULL,
-			  0x30000040ULL },
-			{ "add_sh1", mk_adrp(0x10000, 0), mk_add(1, 1, 1, 2),
-			  0x20000000ULL, 0x30000000ULL },
-			{ "add_sh1_misaligned", mk_adrp(0x10000, 0),
-			  mk_add(1, 1, 1, 2), 0x20000000ULL, 0x30000020ULL },
-			{ "ldr_x", mk_adrp(0x10000, 0), mk_ldr_x(4, 2, 3),
-			  0x20000000ULL, 0x30000000ULL },
-			{ "ldr_x_shifted", mk_adrp(0x10000, 0), mk_ldr_x(4, 2, 3),
-			  0x20000000ULL, 0x30000040ULL },
-			{ "ldrb", mk_adrp(0x10000, 0), mk_ldrb(0x20, 4, 5),
-			  0x20000000ULL, 0x30000000ULL },
-			{ "far", mk_adrp(0x10000, 0), mk_add(0x20, 0, 1, 2),
-			  0x20000000ULL, 0x10000000ULL + (1ULL << 33) },
-			{ "scale", mk_adrp(0x10000, 0), mk_ldr_x(4, 2, 3),
-			  0x20000000ULL, 0x30000004ULL },
-			{ "nop_follower", mk_adrp(0x10000, 0), 0xD503201Fu,
-			  0x20000000ULL, 0x30000000ULL },
-			{ "sub_follower", mk_adrp(0x10000, 0),
-			  mk_sub(0x20, 0, 1, 2), 0x20000000ULL,
-			  0x30000000ULL },
-			/* ADDS shares ADD (immediate)'s imm12 field; only the S
-			 * bit[29] differs.  It must be retargeted like ADD. */
-			{ "adds_follower", mk_adrp(0x10000, 0),
-			  mk_adds(0x20, 0, 1, 2), 0x20000000ULL,
-			  0x30000000ULL },
-			/* SUBS is still a subtract: no unsigned imm12 can reach
-			 * an arbitrary lower in-page offset, so it is refused. */
-			{ "subs_follower", mk_adrp(0x10000, 0),
-			  mk_subs(0x20, 0, 1, 2), 0x20000000ULL,
-			  0x30000000ULL },
-			/* Backward move: the new page is below both the old array
-			 * and the ADRP's own page, so the ADRP delta is negative.
-			 * It is in range and must encode, not be refused. */
-			{ "backward", mk_adrp(0x10000, 0),
-			  mk_add(0x20, 0, 1, 2), 0x20000000ULL,
-			  0x0F000000ULL },
-			{ "bad_adrp", 0xD503201Fu, mk_add(0x20, 0, 1, 2),
-			  0x20000000ULL, 0x30000000ULL },
+		    {"add_sh0", mk_adrp(0x10000, 0), mk_add(0x20, 0, 1, 2), 0x20000000ULL,
+		     0x30000000ULL},
+		    {"add_sh0_shifted", mk_adrp(0x10000, 0), mk_add(0x20, 0, 1, 2), 0x20000000ULL,
+		     0x30000040ULL},
+		    {"add_sh1", mk_adrp(0x10000, 0), mk_add(1, 1, 1, 2), 0x20000000ULL,
+		     0x30000000ULL},
+		    {"add_sh1_misaligned", mk_adrp(0x10000, 0), mk_add(1, 1, 1, 2), 0x20000000ULL,
+		     0x30000020ULL},
+		    {"ldr_x", mk_adrp(0x10000, 0), mk_ldr_x(4, 2, 3), 0x20000000ULL, 0x30000000ULL},
+		    {"ldr_x_shifted", mk_adrp(0x10000, 0), mk_ldr_x(4, 2, 3), 0x20000000ULL,
+		     0x30000040ULL},
+		    {"ldrb", mk_adrp(0x10000, 0), mk_ldrb(0x20, 4, 5), 0x20000000ULL,
+		     0x30000000ULL},
+		    {"far", mk_adrp(0x10000, 0), mk_add(0x20, 0, 1, 2), 0x20000000ULL,
+		     0x10000000ULL + (1ULL << 33)},
+		    {"scale", mk_adrp(0x10000, 0), mk_ldr_x(4, 2, 3), 0x20000000ULL, 0x30000004ULL},
+		    {"nop_follower", mk_adrp(0x10000, 0), 0xD503201Fu, 0x20000000ULL,
+		     0x30000000ULL},
+		    {"sub_follower", mk_adrp(0x10000, 0), mk_sub(0x20, 0, 1, 2), 0x20000000ULL,
+		     0x30000000ULL},
+		    /* ADDS shares ADD (immediate)'s imm12 field; only the S
+		     * bit[29] differs.  It must be retargeted like ADD. */
+		    {"adds_follower", mk_adrp(0x10000, 0), mk_adds(0x20, 0, 1, 2), 0x20000000ULL,
+		     0x30000000ULL},
+		    /* SUBS is still a subtract: no unsigned imm12 can reach
+		     * an arbitrary lower in-page offset, so it is refused. */
+		    {"subs_follower", mk_adrp(0x10000, 0), mk_subs(0x20, 0, 1, 2), 0x20000000ULL,
+		     0x30000000ULL},
+		    /* Backward move: the new page is below both the old array
+		     * and the ADRP's own page, so the ADRP delta is negative.
+		     * It is in range and must encode, not be refused. */
+		    {"backward", mk_adrp(0x10000, 0), mk_add(0x20, 0, 1, 2), 0x20000000ULL,
+		     0x0F000000ULL},
+		    {"bad_adrp", 0xD503201Fu, mk_add(0x20, 0, 1, 2), 0x20000000ULL, 0x30000000ULL},
 		};
 		const u64 pc = 0x10000000ULL;
 		size_t i;
 
 		for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
 			u32 out_a = 0, out_f = 0;
-			int ret = dh_ins_test_pair_retarget(cases[i].adrp,
-							   cases[i].follow, pc,
-							   cases[i].old_base,
-							   cases[i].new_base,
-							   &out_a, &out_f);
+			int ret = dh_ins_test_pair_retarget(cases[i].adrp, cases[i].follow, pc,
+							    cases[i].old_base, cases[i].new_base,
+							    &out_a, &out_f);
 
 			printf("case_%s_ret=%d\n", cases[i].name, ret);
 			if (ret != DH_OK)
 				continue;
-			printf("case_%s_dst_adrp=0x%08" PRIx32 "\n",
-			       cases[i].name, out_a);
-			printf("case_%s_dst_follow=0x%08" PRIx32 "\n",
-			       cases[i].name, out_f);
-			printf("case_%s_xor_adrp=0x%08" PRIx32 "\n",
-			       cases[i].name, out_a ^ cases[i].adrp);
-			printf("case_%s_xor_follow=0x%08" PRIx32 "\n",
-			       cases[i].name, out_f ^ cases[i].follow);
-			printf("case_%s_imm12=%d\n", cases[i].name,
-			       (int)((out_f >> 10) & 0xFFF));
-			printf("case_%s_sh=%d\n", cases[i].name,
-			       (int)((out_f >> 22) & 1));
-			printf("case_%s_opc=%d\n", cases[i].name,
-			       (int)((out_f >> 22) & 3));
-			printf("case_%s_size=%d\n", cases[i].name,
-			       (int)((out_f >> 30) & 3));
-			printf("case_%s_pages=%d\n", cases[i].name,
-			       (int)decode_adrp_pages(out_a));
+			printf("case_%s_dst_adrp=0x%08" PRIx32 "\n", cases[i].name, out_a);
+			printf("case_%s_dst_follow=0x%08" PRIx32 "\n", cases[i].name, out_f);
+			printf("case_%s_xor_adrp=0x%08" PRIx32 "\n", cases[i].name,
+			       out_a ^ cases[i].adrp);
+			printf("case_%s_xor_follow=0x%08" PRIx32 "\n", cases[i].name,
+			       out_f ^ cases[i].follow);
+			printf("case_%s_imm12=%d\n", cases[i].name, (int)((out_f >> 10) & 0xFFF));
+			printf("case_%s_sh=%d\n", cases[i].name, (int)((out_f >> 22) & 1));
+			printf("case_%s_opc=%d\n", cases[i].name, (int)((out_f >> 22) & 3));
+			printf("case_%s_size=%d\n", cases[i].name, (int)((out_f >> 30) & 3));
+			printf("case_%s_pages=%d\n", cases[i].name, (int)decode_adrp_pages(out_a));
 		}
 		print_int("r_null_out",
-			  dh_ins_test_pair_retarget(cases[0].adrp,
-						    cases[0].follow, pc,
-						    0x20000000ULL,
-						    0x30000000ULL,
-						    NULL, NULL));
+			  dh_ins_test_pair_retarget(cases[0].adrp, cases[0].follow, pc,
+						    0x20000000ULL, 0x30000000ULL, NULL, NULL));
 		print_int("inval", DH_E_INVAL);
 		return 0;
 	}
@@ -822,13 +767,12 @@ int main(int argc, char **argv)
 
 		emit("scan_bounds");
 		g_text[0] = mk_adrp(dp, 0);
-		g_text[1] = mk_add(0, 0, 0, 0);       /* old + 0: inside */
+		g_text[1] = mk_add(0, 0, 0, 0); /* old + 0: inside */
 		g_text[2] = mk_adrp(dp, 2);
-		g_text[3] = mk_add(64, 0, 2, 2);      /* old + 64: outside */
+		g_text[3] = mk_add(64, 0, 2, 2); /* old + 64: outside */
 		g_probe_stext = (void *)(uintptr_t)g_text;
 		g_probe_etext = (void *)(uintptr_t)(g_text + 16);
-		n = dh_scan_refs(&g_ctx, (void *)(uintptr_t)old, 64, NULL,
-				 sites, 8);
+		n = dh_scan_refs(&g_ctx, (void *)(uintptr_t)old, 64, NULL, sites, 8);
 		print_int("n", n);
 		print_u64("site0", (u64)(uintptr_t)sites[0]);
 		print_u64("expect0", (u64)(uintptr_t)&g_text[0]);
@@ -847,7 +791,7 @@ int main(int argc, char **argv)
 
 		emit("scan_unencodable");
 		g_text[0] = mk_adrp(dp, 0);
-		g_text[1] = mk_ldr_x(4, 2, 3);        /* old + 0x20 */
+		g_text[1] = mk_ldr_x(4, 2, 3); /* old + 0x20 */
 		g_probe_stext = (void *)(uintptr_t)g_text;
 		g_probe_etext = (void *)(uintptr_t)(g_text + 16);
 		n = dh_scan_refs(&g_ctx, (void *)(uintptr_t)old, 64,

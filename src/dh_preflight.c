@@ -55,12 +55,12 @@ int dh_probe_protection(struct dh_ctx *ctx, void *addr, enum dh_route *route)
 	 * small enough that a probe near a page boundary cannot over-read. */
 	ret = dh_read(ctx, addr, before, len);
 	if (ret != DH_OK)
-		return ret;                    /* real read error, propagated */
+		return ret; /* real read error, propagated */
 
 	ret = ctx->be->ro_write(addr, before, len, DH_ROUTE_FIXMAP);
 	if (ret != DH_OK) {
-		*route = DH_ROUTE_FIXMAP;      /* which route was attempted */
-		return ret;                    /* real write error, propagated */
+		*route = DH_ROUTE_FIXMAP; /* which route was attempted */
+		return ret;		  /* real write error, propagated */
 	}
 
 	ret = dh_read(ctx, addr, after, len);

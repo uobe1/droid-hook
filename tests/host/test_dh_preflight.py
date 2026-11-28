@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Host tests for dh_preflight() and dh_probe_protection()."""
 
-import subprocess
 import pathlib
+import subprocess
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]

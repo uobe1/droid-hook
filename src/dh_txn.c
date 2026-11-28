@@ -20,12 +20,11 @@ int dh_txn_rollback_locked(struct dh_ctx *ctx);
 
 static int dh_route_valid(enum dh_route route)
 {
-	return route == DH_ROUTE_ALIAS || route == DH_ROUTE_PTE ||
-	       route == DH_ROUTE_FIXMAP || route == DH_ROUTE_DMA;
+	return route == DH_ROUTE_ALIAS || route == DH_ROUTE_PTE || route == DH_ROUTE_FIXMAP ||
+	       route == DH_ROUTE_DMA;
 }
 
-static int dh_undo_bytes_equal(const unsigned char *a,
-			       const unsigned char *b, size_t len)
+static int dh_undo_bytes_equal(const unsigned char *a, const unsigned char *b, size_t len)
 {
 	size_t i;
 
@@ -69,8 +68,7 @@ int dh_txn_begin(struct dh_ctx *ctx)
 	return DH_OK;
 }
 
-int dh_txn_record(struct dh_ctx *ctx, void *addr, size_t len,
-		  enum dh_route route)
+int dh_txn_record(struct dh_ctx *ctx, void *addr, size_t len, enum dh_route route)
 {
 	struct dh_undo_ent *ent;
 	size_t cap;
@@ -122,7 +120,7 @@ int dh_txn_record(struct dh_ctx *ctx, void *addr, size_t len,
 int dh_txn_rollback_locked(struct dh_ctx *ctx)
 {
 	struct dh_backend *be;
-	unsigned char back[sizeof(((struct dh_ctx *)0)->txn.undo[0].orig)] = { 0 };
+	unsigned char back[sizeof(((struct dh_ctx *)0)->txn.undo[0].orig)] = {0};
 	u32 i;
 	int first_err = DH_OK;
 
@@ -140,8 +138,7 @@ int dh_txn_rollback_locked(struct dh_ctx *ctx)
 		ret = be->ro_write(ent->addr, ent->orig, ent->len, ent->route);
 		if (ret == DH_OK) {
 			ret = dh_read(ctx, ent->addr, back, ent->len);
-			if (ret == DH_OK &&
-			    !dh_undo_bytes_equal(back, ent->orig, ent->len))
+			if (ret == DH_OK && !dh_undo_bytes_equal(back, ent->orig, ent->len))
 				ret = DH_E_VERIFY;
 		}
 		/* Keep replaying: a partial rollback is worse than a full

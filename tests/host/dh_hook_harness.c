@@ -28,8 +28,7 @@ size_t dh_hook_test_relo_len(struct dh_hook *hook);
 u32 dh_hook_test_relo_word(struct dh_hook *hook, size_t idx);
 u32 dh_hook_test_jump_word(struct dh_hook *hook, size_t idx);
 u32 dh_hook_test_origin_word(struct dh_hook *hook, size_t idx);
-int dh_hook_chain_run(struct dh_hook *hook, void *fargs,
-		      int (*origin)(void *fargs));
+int dh_hook_chain_run(struct dh_hook *hook, void *fargs, int (*origin)(void *fargs));
 int dh_shadow_put(struct dh_ctx *ctx, struct dh_shadow_item *item);
 void dh_shadow_test_reset(void);
 u32 dh_shadow_test_generation(void);
@@ -37,7 +36,7 @@ int dh_shadow_test_live(void);
 
 /* ---- fake text / backend state ---- */
 
-#define FAKE_INSNS		72
+#define FAKE_INSNS 72
 static u32 g_text[FAKE_INSNS];
 static int g_text_writes;
 static int g_quiesce_depth;
@@ -77,11 +76,11 @@ static char g_arbitrate_last_key[DH_KEY_LEN];
  * in reverse order of allocation, all inside one quiesce window"; none of that
  * is observable from return codes, so the backend records it.  Index i refers
  * to the i-th allocation made through this backend since the last reset. */
-#define TRACE_MAX		32
+#define TRACE_MAX 32
 static void *g_alloc_trace[TRACE_MAX];
 static int g_alloc_n;
-static int g_free_order[TRACE_MAX];	/* alloc index of the freed pointer */
-static int g_free_quiesce[TRACE_MAX];	/* quiesce depth at free time */
+static int g_free_order[TRACE_MAX];	  /* alloc index of the freed pointer */
+static int g_free_quiesce[TRACE_MAX];	  /* quiesce depth at free time */
 static int g_free_text_writes[TRACE_MAX]; /* text writes done before free */
 static int g_free_n;
 
@@ -95,7 +94,7 @@ int dh_insn_gen_absolute_jump(u32 *out, void *target)
 	if (!out)
 		return DH_E_INVAL;
 	for (i = 0; i < 4; i++)
-		out[i] = 0xD4000000U + (u32)i;	/* recognizable fake opcodes */
+		out[i] = 0xD4000000U + (u32)i; /* recognizable fake opcodes */
 	/* Encode the target into the last two words so the test can verify the
 	 * jump points at the replacement / the fifth instruction. */
 	out[2] = (u32)(a & 0xFFFFFFFFU);
@@ -103,8 +102,7 @@ int dh_insn_gen_absolute_jump(u32 *out, void *target)
 	return DH_OK;
 }
 
-int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc,
-		     size_t nr)
+int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc, size_t nr)
 {
 	size_t i;
 
@@ -113,13 +111,12 @@ int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc,
 	if (!src || !dst || nr == 0 || nr > 4)
 		return DH_E_INVAL;
 	for (i = 0; i < nr; i++)
-		dst[i] = src[i] ^ 0xA5A5A5A5U;	/* visible relocation marker */
+		dst[i] = src[i] ^ 0xA5A5A5A5U; /* visible relocation marker */
 	return DH_OK;
 }
 
-int dh_insn_relocate_out(const u32 *src, u32 *dst, size_t dst_cap,
-			 size_t *out_nr, void *src_pc, void *dst_pc,
-			 size_t nr)
+int dh_insn_relocate_out(const u32 *src, u32 *dst, size_t dst_cap, size_t *out_nr, void *src_pc,
+			 void *dst_pc, size_t nr)
 {
 	int ret;
 
@@ -133,18 +130,25 @@ int dh_insn_relocate_out(const u32 *src, u32 *dst, size_t dst_cap,
 	return ret;
 }
 
-int dh_scan_refs(struct dh_ctx *ctx, void *old_base, size_t old_len,
-		 void *new_base, void **sites, size_t max_sites)
+int dh_scan_refs(struct dh_ctx *ctx, void *old_base, size_t old_len, void *new_base, void **sites,
+		 size_t max_sites)
 {
-	(void)ctx; (void)old_base; (void)old_len; (void)new_base;
-	(void)sites; (void)max_sites;
+	(void)ctx;
+	(void)old_base;
+	(void)old_len;
+	(void)new_base;
+	(void)sites;
+	(void)max_sites;
 	return 0;
 }
 
-int dh_patch_text_batch(struct dh_ctx *ctx, void **addrs, u32 **insns,
-			size_t *lens, size_t nr)
+int dh_patch_text_batch(struct dh_ctx *ctx, void **addrs, u32 **insns, size_t *lens, size_t nr)
 {
-	(void)ctx; (void)addrs; (void)insns; (void)lens; (void)nr;
+	(void)ctx;
+	(void)addrs;
+	(void)insns;
+	(void)lens;
+	(void)nr;
 	return DH_OK;
 }
 
@@ -163,8 +167,7 @@ int dh_txn_begin(struct dh_ctx *ctx)
 	return DH_OK;
 }
 
-int dh_txn_record(struct dh_ctx *ctx, void *addr, size_t len,
-		  enum dh_route route)
+int dh_txn_record(struct dh_ctx *ctx, void *addr, size_t len, enum dh_route route)
 {
 	struct dh_undo_ent *e;
 
@@ -252,14 +255,12 @@ static int h_patch_pointer(void *target, void *value)
 	return DH_OK;
 }
 
-static int h_text_write(void *addr, const void *src, size_t len,
-			enum dh_route route)
+static int h_text_write(void *addr, const void *src, size_t len, enum dh_route route)
 {
 	(void)route;
 	if (!addr || !src || len == 0)
 		return DH_E_INVAL;
-	g_origin_nonnull_at_write =
-		(g_origin_slot && *g_origin_slot) ? 1 : 0;
+	g_origin_nonnull_at_write = (g_origin_slot && *g_origin_slot) ? 1 : 0;
 	g_text_write_quiesce = g_quiesce_depth;
 	if (g_text_write_fail)
 		return DH_E_QUIESCE;
@@ -284,8 +285,7 @@ static int h_text_write(void *addr, const void *src, size_t len,
 	return DH_OK;
 }
 
-static int h_ro_write(void *addr, const void *src, size_t len,
-		      enum dh_route route)
+static int h_ro_write(void *addr, const void *src, size_t len, enum dh_route route)
 {
 	return h_text_write(addr, src, len, route);
 }
@@ -336,8 +336,8 @@ static void *h_alloc_exec(size_t size)
 	if (size == 0)
 		size = 1;
 	size = ((size + page - 1) / page) * page;
-	p = mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC,
-		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	p = mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1,
+		 0);
 	if (p == MAP_FAILED)
 		return NULL;
 	g_exec_live_ptr = p;
@@ -358,13 +358,15 @@ static void h_free_exec(const void *p)
 
 static void h_icache_flush(void *addr, size_t len)
 {
-	(void)addr; (void)len;
+	(void)addr;
+	(void)len;
 	g_icache_calls++;
 }
 
 static void h_tlb_flush(void *addr, size_t len)
 {
-	(void)addr; (void)len;
+	(void)addr;
+	(void)len;
 }
 
 static void h_quiesce_begin(void)
@@ -388,19 +390,19 @@ static int h_arbitrate(void *addr, const char *key)
 }
 
 static struct dh_backend g_be = {
-	.rw = h_rw,
-	.patch_pointer = h_patch_pointer,
-	.text_write = h_text_write,
-	.ro_write = h_ro_write,
-	.probe = h_probe,
-	.alloc = h_alloc,
-	.free = h_free,
-	.icache_flush = h_icache_flush,
-	.tlb_flush = h_tlb_flush,
-	.quiesce_begin = h_quiesce_begin,
-	.quiesce_end = h_quiesce_end,
-	.name = "host-harness",
-	.abi = DH_ABI,
+    .rw = h_rw,
+    .patch_pointer = h_patch_pointer,
+    .text_write = h_text_write,
+    .ro_write = h_ro_write,
+    .probe = h_probe,
+    .alloc = h_alloc,
+    .free = h_free,
+    .icache_flush = h_icache_flush,
+    .tlb_flush = h_tlb_flush,
+    .quiesce_begin = h_quiesce_begin,
+    .quiesce_end = h_quiesce_end,
+    .name = "host-harness",
+    .abi = DH_ABI,
 };
 
 /* ---- exported harness surface (ctypes) ---- */
@@ -483,15 +485,13 @@ struct hook_result harness_install(const char *key, void *replacement)
 	struct hook_result r;
 
 	memset(&r, 0, sizeof(r));
-	r.ret = dh_hook_install(harness_ctx(), key, (void *)g_text,
-				replacement, &r.hook);
+	r.ret = dh_hook_install(harness_ctx(), key, (void *)g_text, replacement, &r.hook);
 	return r;
 }
 
 /* Same as harness_install() but with a caller-chosen target, so a test can
  * fill the fixed-size registry and observe the failure path. */
-struct hook_result harness_install_at(const char *key, void *target,
-				      void *replacement)
+struct hook_result harness_install_at(const char *key, void *target, void *replacement)
 {
 	struct hook_result r;
 
@@ -503,15 +503,14 @@ struct hook_result harness_install_at(const char *key, void *target,
 /* Install through the explicit-origin entry.  The slot pointer is exposed to
  * h_text_write() for the duration of the call so the test can prove the origin
  * was handed over before the entry became live. */
-struct hook_result harness_install_origin(const char *key, void *replacement,
-					  void **origin_out)
+struct hook_result harness_install_origin(const char *key, void *replacement, void **origin_out)
 {
 	struct hook_result r;
 
 	memset(&r, 0, sizeof(r));
 	g_origin_slot = origin_out;
-	r.ret = dh_hook_install_origin(harness_ctx(), key, (void *)g_text,
-				       replacement, &r.hook, origin_out);
+	r.ret = dh_hook_install_origin(harness_ctx(), key, (void *)g_text, replacement, &r.hook,
+				       origin_out);
 	g_origin_slot = NULL;
 	return r;
 }
@@ -521,14 +520,12 @@ int harness_uninstall(struct dh_hook *hook)
 	return dh_hook_uninstall(harness_ctx(), hook);
 }
 
-int harness_wrap(struct dh_hook *hook, int (*before)(void *),
-		 int (*after)(void *))
+int harness_wrap(struct dh_hook *hook, int (*before)(void *), int (*after)(void *))
 {
 	return dh_hook_wrap(harness_ctx(), hook, before, after);
 }
 
-int harness_chain_run(struct dh_hook *hook, void *fargs,
-		      int (*origin)(void *))
+int harness_chain_run(struct dh_hook *hook, void *fargs, int (*origin)(void *))
 {
 	return dh_hook_chain_run(hook, fargs, origin);
 }

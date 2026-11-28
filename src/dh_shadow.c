@@ -23,8 +23,8 @@
 #include <string.h>
 #endif
 
-#define DH_SHADOW_MAX		32
-#define DH_SHADOW_ALIVE		0x53484441U	/* "SHDA" */
+#define DH_SHADOW_MAX 32
+#define DH_SHADOW_ALIVE 0x53484441U /* "SHDA" */
 
 struct dh_shadow_slot {
 	struct dh_shadow_item *item;
@@ -100,9 +100,9 @@ static void dh_shadow_free_item(struct dh_ctx *ctx, struct dh_shadow_item *item)
 	if (!item)
 		return;
 	if (dh_in_pool_shadow(item)) {
-		size_t i = (size_t)(((const unsigned char *)item -
-				     (const unsigned char *)dh_shadow_mem) /
-				    sizeof(dh_shadow_mem[0]));
+		size_t i =
+		    (size_t)(((const unsigned char *)item - (const unsigned char *)dh_shadow_mem) /
+			     sizeof(dh_shadow_mem[0]));
 		if (i < DH_SHADOW_MAX)
 			dh_shadow_mem_used[i] = 0;
 	} else if (ctx && ctx->be && ctx->be->free) {
@@ -142,8 +142,7 @@ static struct dh_shadow_slot *dh_shadow_empty(void)
  * space, or a size mismatch.  NULL is the documented failure indicator for
  * pointer-returning functions in dh.h.
  */
-struct dh_shadow_item *dh_shadow_get_or_alloc(struct dh_ctx *ctx, void *obj,
-					       u32 id, size_t size)
+struct dh_shadow_item *dh_shadow_get_or_alloc(struct dh_ctx *ctx, void *obj, u32 id, size_t size)
 {
 	struct dh_shadow_slot *s;
 	struct dh_shadow_item *item;
@@ -230,8 +229,7 @@ int dh_shadow_put(struct dh_ctx *ctx, struct dh_shadow_item *item)
 	if (!item)
 		return DH_E_INVAL;
 	for (i = 0; i < DH_SHADOW_MAX; i++) {
-		if (dh_shadow_tab[i].used &&
-		    dh_shadow_tab[i].item == item) {
+		if (dh_shadow_tab[i].used && dh_shadow_tab[i].item == item) {
 			s = &dh_shadow_tab[i];
 			break;
 		}

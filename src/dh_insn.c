@@ -47,13 +47,13 @@ extern int dh_txn_rollback(struct dh_ctx *ctx);
 /* ------------------------------------------------------------------------- */
 
 /* ADRP / ADR: immlo = bits[30:29], immhi = bits[23:5]. */
-#define ADR_IMM_MASK   0x60FFFFE0u
-#define ADR_IMMHI_SH   5
-#define ADR_IMMLO_SH   29
-#define ADRP_OP_MASK   0x9F000000u
-#define ADRP_OP        0x90000000u
-#define ADR_OP_MASK    0x9F000000u
-#define ADR_OP         0x10000000u
+#define ADR_IMM_MASK 0x60FFFFE0u
+#define ADR_IMMHI_SH 5
+#define ADR_IMMLO_SH 29
+#define ADRP_OP_MASK 0x9F000000u
+#define ADRP_OP 0x90000000u
+#define ADR_OP_MASK 0x9F000000u
+#define ADR_OP 0x10000000u
 
 /* ADD/SUB (immediate): imm12 = bits[21:10], sh = bits[23:22] (only LSL #0 and
  * LSL #12 are allocated; bit[23] must be 0), S = bit[30].  The class mask must
@@ -68,70 +68,70 @@ extern int dh_txn_rollback(struct dh_ctx *ctx);
  * That is the same class of bug as commit 8caf6e6, so the mask is corrected
  * here and ADD_SH_MASK names the bits an LSL #12 -> LSL #0 re-encode must
  * clear explicitly. */
-#define ADD_IMM_MASK   0x003FFC00u
-#define ADD_IMM_SH     10
-#define ADD_SH_BIT     (1u << 22)
-#define ADD_SH_MASK    0x00C00000u
+#define ADD_IMM_MASK 0x003FFC00u
+#define ADD_IMM_SH 10
+#define ADD_SH_BIT (1u << 22)
+#define ADD_SH_MASK 0x00C00000u
 /* ADD/SUB (immediate) class: bit[29] is the S flag, so it is excluded from
  * the class mask; ADDS/SUBS must match the same encoders.  Bit[30] stays in
  * the mask so SUB (0x51...) is not mistaken for ADD (0x11...). */
-#define ADD_OP_MASK    0x5F000000u
-#define ADD_OP         0x11000000u
-#define SUB_OP         0x51000000u
+#define ADD_OP_MASK 0x5F000000u
+#define ADD_OP 0x11000000u
+#define SUB_OP 0x51000000u
 
 /* Load/store (unsigned immediate): imm12 = bits[21:10]; opc = bits[23:22],
  * size = bits[31:30], V = bit[26] MUST be preserved (commit 8caf6e6). */
-#define LDST_IMM_MASK  0x003FFC00u
-#define LDST_IMM_SH    10
-#define LDST_OP_MASK   0x3B000000u
-#define LDST_OP        0x39000000u
+#define LDST_IMM_MASK 0x003FFC00u
+#define LDST_IMM_SH 10
+#define LDST_OP_MASK 0x3B000000u
+#define LDST_OP 0x39000000u
 
 /* LDR literal: imm19 = bits[23:5], opc = bits[31:30], V = bit[26].  The class
  * mask excludes V and opc so the SIMD literal forms are relocated too; a
  * literal load copied verbatim would keep an imm19 relative to the old PC. */
 #define LDR_LIT_IMM_MASK 0x00FFFFE0u
-#define LDR_LIT_IMM_SH   5
-#define LDR_LIT_OP_MASK  0x3B000000u
-#define LDR_LIT_OP       0x18000000u
+#define LDR_LIT_IMM_SH 5
+#define LDR_LIT_OP_MASK 0x3B000000u
+#define LDR_LIT_OP 0x18000000u
 
 /* B / BL: imm26 = bits[25:0]; BL has bit[31]=1, so the class mask must
  * include it or BL (0x94000000) is decoded as B (0x14000000). */
 #define BRANCH_IMM_MASK 0x03FFFFFFu
-#define BRANCH_OP_MASK  0xFC000000u
-#define B_OP            0x14000000u
-#define BL_OP           0x94000000u
+#define BRANCH_OP_MASK 0xFC000000u
+#define B_OP 0x14000000u
+#define BL_OP 0x94000000u
 
 /* B.cond: imm19 = bits[23:5], cond = bits[3:0]. */
-#define BCOND_IMM_MASK  0x00FFFFE0u
-#define BCOND_IMM_SH    5
-#define BCOND_OP_MASK   0xFF000010u
-#define BCOND_OP        0x54000000u
+#define BCOND_IMM_MASK 0x00FFFFE0u
+#define BCOND_IMM_SH 5
+#define BCOND_OP_MASK 0xFF000010u
+#define BCOND_OP 0x54000000u
 
 /* CBZ/CBNZ: imm19 = bits[23:5], op = bit[24], sf = bit[31].  The class mask
  * must exclude bit[24], or CBNZ (0x35...) is decoded as CBZ (0x34...) and
  * copied verbatim with a stale imm19. */
-#define CBZ_IMM_MASK    0x00FFFFE0u
-#define CBZ_IMM_SH      5
-#define CBZ_OP_MASK     0x7E000000u
-#define CBZ_OP          0x34000000u
+#define CBZ_IMM_MASK 0x00FFFFE0u
+#define CBZ_IMM_SH 5
+#define CBZ_OP_MASK 0x7E000000u
+#define CBZ_OP 0x34000000u
 
 /* TBZ/TBNZ: b40 = bits[23:19], imm14 = bits[18:5].  As with CBZ, bit[24]
  * selects TBNZ and must stay out of the class mask. */
-#define TBZ_IMM14_MASK  0x0007FFE0u
-#define TBZ_IMM14_SH    5
-#define TBZ_B40_MASK    0x00F80000u
-#define TBZ_OP_MASK     0x7E000000u
-#define TBZ_OP          0x36000000u
+#define TBZ_IMM14_MASK 0x0007FFE0u
+#define TBZ_IMM14_SH 5
+#define TBZ_B40_MASK 0x00F80000u
+#define TBZ_OP_MASK 0x7E000000u
+#define TBZ_OP 0x36000000u
 
 /* Signed ranges.  ADRP's immediate is a 21-bit signed *page* delta, which
  * covers ±4 GiB of address space; the limit below is in pages. */
-#define ADRP_PAGE_LIMIT (1LL << 20)   /* 2^20 pages = ±4 GiB */
-#define ADR_RANGE       (1LL << 20)   /* ±1 MiB, 21-bit byte delta */
-#define BRANCH_RANGE    (1LL << 27)   /* ±128 MiB, 26-bit word delta */
-#define LDR_LIT_RANGE   (1LL << 20)   /* ±1 MiB, 19-bit word delta */
-#define BCOND_RANGE     (1LL << 20)   /* ±1 MiB, 19-bit word delta */
-#define CBZ_RANGE       (1LL << 20)
-#define TBZ_RANGE       (1LL << 15)   /* ±32 KiB, 14-bit word delta */
+#define ADRP_PAGE_LIMIT (1LL << 20) /* 2^20 pages = ±4 GiB */
+#define ADR_RANGE (1LL << 20)	    /* ±1 MiB, 21-bit byte delta */
+#define BRANCH_RANGE (1LL << 27)    /* ±128 MiB, 26-bit word delta */
+#define LDR_LIT_RANGE (1LL << 20)   /* ±1 MiB, 19-bit word delta */
+#define BCOND_RANGE (1LL << 20)	    /* ±1 MiB, 19-bit word delta */
+#define CBZ_RANGE (1LL << 20)
+#define TBZ_RANGE (1LL << 15) /* ±32 KiB, 14-bit word delta */
 
 static int fits(s64 delta, s64 range)
 {
@@ -158,8 +158,7 @@ static s64 sext(s64 value, unsigned int bits)
 /* ADRP's immediate is a 21-bit signed *page* delta split into immlo/immhi. */
 static s64 adrp_imm_pages(u32 insn)
 {
-	s64 imm = (s64)((((insn >> ADR_IMMHI_SH) & 0x7FFFF) << 2) |
-			((insn >> ADR_IMMLO_SH) & 3));
+	s64 imm = (s64)((((insn >> ADR_IMMHI_SH) & 0x7FFFF) << 2) | ((insn >> ADR_IMMLO_SH) & 3));
 
 	return sext(imm, 21);
 }
@@ -169,8 +168,7 @@ static u32 adrp_set_imm_pages(u32 insn, s64 pages)
 	u32 lo = (u32)((u64)pages & 3);
 	u32 hi = (u32)(((u64)pages >> 2) & 0x7FFFF);
 
-	return (insn & ~ADR_IMM_MASK) |
-	       (lo << ADR_IMMLO_SH) | (hi << ADR_IMMHI_SH);
+	return (insn & ~ADR_IMM_MASK) | (lo << ADR_IMMLO_SH) | (hi << ADR_IMMHI_SH);
 }
 
 /* ADD/SUB (immediate).  ADD_OP_MASK keeps bit[30], so SUB is not mistaken for
@@ -199,8 +197,7 @@ static u32 addsub_set_imm_off(u32 insn, u64 off)
 	u32 sh = (insn >> 22) & 1;
 	u32 imm12 = (u32)(off >> (sh ? 12 : 0));
 
-	return (insn & ~ADD_IMM_MASK) |
-	       ((imm12 << ADD_IMM_SH) & ADD_IMM_MASK);
+	return (insn & ~ADD_IMM_MASK) | ((imm12 << ADD_IMM_SH) & ADD_IMM_MASK);
 }
 
 /* Load/store (unsigned immediate).  LDST_OP_MASK matches size/opc/V-bit
@@ -226,8 +223,7 @@ static u32 ldst_set_imm_off(u32 insn, u64 off)
 {
 	u32 imm12 = (u32)(off / ldst_scale(insn));
 
-	return (insn & ~LDST_IMM_MASK) |
-	       ((imm12 << LDST_IMM_SH) & LDST_IMM_MASK);
+	return (insn & ~LDST_IMM_MASK) | ((imm12 << LDST_IMM_SH) & LDST_IMM_MASK);
 }
 
 /* READ_ONCE semantics: a volatile load, so the compiler cannot fold or cache
@@ -299,8 +295,7 @@ static int relocate_pc_rel(u32 insn, u32 *dst, u64 src_pc, u64 dst_pc)
 		s64 page_delta;
 
 		target = (s64)(src_pc & ~0xFFFULL) + (imm << 12);
-		page_delta = (s64)((target & ~0xFFFULL) -
-				   (dst_pc & ~0xFFFULL)) >> 12;
+		page_delta = (s64)((target & ~0xFFFULL) - (dst_pc & ~0xFFFULL)) >> 12;
 		if (!fits(page_delta, ADRP_PAGE_LIMIT))
 			return DH_E_OPNOTSUPP;
 		*dst = adrp_set_imm_pages(insn, page_delta);
@@ -310,8 +305,9 @@ static int relocate_pc_rel(u32 insn, u32 *dst, u64 src_pc, u64 dst_pc)
 		/* ADR: 21-bit signed byte delta, ±1 MiB.  Like ADRP the
 		 * immediate is split into immlo/immhi, so it cannot be
 		 * written with a single contiguous shift. */
-		s64 imm = sext((s64)((((insn >> ADR_IMMHI_SH) & 0x7FFFF) << 2) |
-				     ((insn >> ADR_IMMLO_SH) & 3)), 21);
+		s64 imm = sext(
+		    (s64)((((insn >> ADR_IMMHI_SH) & 0x7FFFF) << 2) | ((insn >> ADR_IMMLO_SH) & 3)),
+		    21);
 		u32 lo, hi;
 
 		target = (s64)src_pc + imm;
@@ -320,12 +316,10 @@ static int relocate_pc_rel(u32 insn, u32 *dst, u64 src_pc, u64 dst_pc)
 			return DH_E_OPNOTSUPP;
 		lo = (u32)((u64)delta & 3);
 		hi = (u32)(((u64)delta >> 2) & 0x7FFFF);
-		*dst = (insn & ~ADR_IMM_MASK) |
-		       (lo << ADR_IMMLO_SH) | (hi << ADR_IMMHI_SH);
+		*dst = (insn & ~ADR_IMM_MASK) | (lo << ADR_IMMLO_SH) | (hi << ADR_IMMHI_SH);
 		return DH_OK;
 	}
-	if ((insn & BRANCH_OP_MASK) == B_OP ||
-	    (insn & BRANCH_OP_MASK) == BL_OP) {
+	if ((insn & BRANCH_OP_MASK) == B_OP || (insn & BRANCH_OP_MASK) == BL_OP) {
 		/* B/BL: 26-bit signed word delta, ±128 MiB. */
 		s64 imm = sext((s64)(insn & BRANCH_IMM_MASK), 26);
 
@@ -333,8 +327,7 @@ static int relocate_pc_rel(u32 insn, u32 *dst, u64 src_pc, u64 dst_pc)
 		delta = (s64)target - (s64)dst_pc;
 		if (!fits(delta, BRANCH_RANGE) || (delta & 3))
 			return DH_E_OPNOTSUPP;
-		*dst = (insn & ~BRANCH_IMM_MASK) |
-		       ((u32)(delta >> 2) & BRANCH_IMM_MASK);
+		*dst = (insn & ~BRANCH_IMM_MASK) | ((u32)(delta >> 2) & BRANCH_IMM_MASK);
 		return DH_OK;
 	}
 	if ((insn & BCOND_OP_MASK) == BCOND_OP) {
@@ -357,8 +350,7 @@ static int relocate_pc_rel(u32 insn, u32 *dst, u64 src_pc, u64 dst_pc)
 		delta = (s64)target - (s64)dst_pc;
 		if (!fits(delta, CBZ_RANGE) || (delta & 3))
 			return DH_E_OPNOTSUPP;
-		*dst = (insn & ~CBZ_IMM_MASK) |
-		       (((u32)(delta >> 2) << CBZ_IMM_SH) & CBZ_IMM_MASK);
+		*dst = (insn & ~CBZ_IMM_MASK) | (((u32)(delta >> 2) << CBZ_IMM_SH) & CBZ_IMM_MASK);
 		return DH_OK;
 	}
 	if ((insn & TBZ_OP_MASK) == TBZ_OP) {
@@ -375,16 +367,14 @@ static int relocate_pc_rel(u32 insn, u32 *dst, u64 src_pc, u64 dst_pc)
 	}
 	if ((insn & LDR_LIT_OP_MASK) == LDR_LIT_OP) {
 		/* LDR literal: 19-bit signed word delta, ±1 MiB. */
-		s64 imm = sext((s64)((insn & LDR_LIT_IMM_MASK) >>
-				     LDR_LIT_IMM_SH), 19);
+		s64 imm = sext((s64)((insn & LDR_LIT_IMM_MASK) >> LDR_LIT_IMM_SH), 19);
 
 		target = (s64)src_pc + (imm << 2);
 		delta = (s64)target - (s64)dst_pc;
 		if (!fits(delta, LDR_LIT_RANGE) || (delta & 3))
 			return DH_E_OPNOTSUPP;
 		*dst = (insn & ~LDR_LIT_IMM_MASK) |
-		       (((u32)(delta >> 2) << LDR_LIT_IMM_SH) &
-			LDR_LIT_IMM_MASK);
+		       (((u32)(delta >> 2) << LDR_LIT_IMM_SH) & LDR_LIT_IMM_MASK);
 		return DH_OK;
 	}
 	return DH_E_OPNOTSUPP;
@@ -404,14 +394,10 @@ static int insn_is_hint(u32 insn)
  * safe below: every other instruction is position independent. */
 static int insn_is_known_pc_rel(u32 insn)
 {
-	return (insn & ADRP_OP_MASK) == ADRP_OP ||
-	       (insn & ADR_OP_MASK) == ADR_OP ||
-	       (insn & BRANCH_OP_MASK) == B_OP ||
-	       (insn & BRANCH_OP_MASK) == BL_OP ||
-	       (insn & BCOND_OP_MASK) == BCOND_OP ||
-	       (insn & CBZ_OP_MASK) == CBZ_OP ||
-	       (insn & TBZ_OP_MASK) == TBZ_OP ||
-	       (insn & LDR_LIT_OP_MASK) == LDR_LIT_OP;
+	return (insn & ADRP_OP_MASK) == ADRP_OP || (insn & ADR_OP_MASK) == ADR_OP ||
+	       (insn & BRANCH_OP_MASK) == B_OP || (insn & BRANCH_OP_MASK) == BL_OP ||
+	       (insn & BCOND_OP_MASK) == BCOND_OP || (insn & CBZ_OP_MASK) == CBZ_OP ||
+	       (insn & TBZ_OP_MASK) == TBZ_OP || (insn & LDR_LIT_OP_MASK) == LDR_LIT_OP;
 }
 
 /**
@@ -439,8 +425,7 @@ static int insn_is_known_pc_rel(u32 insn)
  * Return: %DH_OK, %DH_E_INVAL on bad arguments, %DH_E_OPNOTSUPP for an
  * unsupported instruction class or an out-of-range PC-relative target.
  */
-int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc,
-		     size_t nr)
+int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc, size_t nr)
 {
 	size_t i;
 	u64 spc = (u64)(uintptr_t)src_pc;
@@ -450,8 +435,7 @@ int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc,
 		return DH_E_INVAL;
 	for (i = 0; i < nr; i++) {
 		u32 insn = insn_read(&src[i]);
-		int ret = relocate_pc_rel(insn, &dst[i], spc + i * 4,
-					   dpc + i * 4);
+		int ret = relocate_pc_rel(insn, &dst[i], spc + i * 4, dpc + i * 4);
 
 		if (ret == DH_OK)
 			continue;
@@ -498,9 +482,8 @@ int dh_insn_relocate(const u32 *src, u32 *dst, void *src_pc, void *dst_pc,
 	return DH_OK;
 }
 
-int dh_insn_relocate_out(const u32 *src, u32 *dst, size_t dst_cap,
-			 size_t *out_nr, void *src_pc, void *dst_pc,
-			 size_t nr)
+int dh_insn_relocate_out(const u32 *src, u32 *dst, size_t dst_cap, size_t *out_nr, void *src_pc,
+			 void *dst_pc, size_t nr)
 {
 	int ret;
 
@@ -551,8 +534,7 @@ int dh_insn_relocate_out(const u32 *src, u32 *dst, size_t dst_cap,
  * used ADD LSL #12 is re-encoded as LSL #0 rather than refused: the ADRP
  * already points at the target page, so imm12 can carry the in-page offset.
  */
-static int insn_pair_retarget(u32 adrp, u32 follow, u64 adrp_pc,
-			      u64 old_base, u64 new_base,
+static int insn_pair_retarget(u32 adrp, u32 follow, u64 adrp_pc, u64 old_base, u64 new_base,
 			      u32 *out_adrp, u32 *out_follow)
 {
 	u64 page, old_addr, new_addr, new_page, off;
@@ -606,15 +588,13 @@ static int insn_pair_retarget(u32 adrp, u32 follow, u64 adrp_pc,
 	return DH_OK;
 }
 
-int dh_insn_retarget_pair(u32 adrp, u32 follow, void *adrp_pc,
-			  void *old_base, void *new_base, u32 out[2])
+int dh_insn_retarget_pair(u32 adrp, u32 follow, void *adrp_pc, void *old_base, void *new_base,
+			  u32 out[2])
 {
 	if (out == NULL)
 		return DH_E_INVAL;
-	return insn_pair_retarget(adrp, follow, (u64)(uintptr_t)adrp_pc,
-				  (u64)(uintptr_t)old_base,
-				  (u64)(uintptr_t)new_base,
-				  &out[0], &out[1]);
+	return insn_pair_retarget(adrp, follow, (u64)(uintptr_t)adrp_pc, (u64)(uintptr_t)old_base,
+				  (u64)(uintptr_t)new_base, &out[0], &out[1]);
 }
 
 #ifdef DH_INS_TEST_SEAM
@@ -624,12 +604,10 @@ int dh_insn_retarget_pair(u32 adrp, u32 follow, void *adrp_pc,
  * exact words insn_pair_retarget() emits.  It calls the same static function
  * dh_scan_refs() uses, so the assertions cover production code, not a copy.
  */
-int dh_ins_test_pair_retarget(u32 adrp, u32 follow, u64 adrp_pc,
-			      u64 old_base, u64 new_base,
+int dh_ins_test_pair_retarget(u32 adrp, u32 follow, u64 adrp_pc, u64 old_base, u64 new_base,
 			      u32 *out_adrp, u32 *out_follow)
 {
-	return insn_pair_retarget(adrp, follow, adrp_pc, old_base, new_base,
-				  out_adrp, out_follow);
+	return insn_pair_retarget(adrp, follow, adrp_pc, old_base, new_base, out_adrp, out_follow);
 }
 #endif
 
@@ -666,16 +644,15 @@ int dh_ins_test_pair_retarget(u32 adrp, u32 follow, u64 adrp_pc,
  * resolved, %DH_E_NOSPC when @max_sites is too small, %DH_E_OPNOTSUPP when an
  * in-range pair cannot be re-encoded for @new_base.
  */
-int dh_scan_refs(struct dh_ctx *ctx, void *old_base, size_t old_len,
-		 void *new_base, void **sites, size_t max_sites)
+int dh_scan_refs(struct dh_ctx *ctx, void *old_base, size_t old_len, void *new_base, void **sites,
+		 size_t max_sites)
 {
 	const u32 *p, *end;
 	u64 olda = (u64)(uintptr_t)old_base;
 	size_t found = 0;
 
 	(void)new_base;
-	if (!ctx || !ctx->be || !old_base || old_len == 0 || !sites ||
-	    max_sites == 0)
+	if (!ctx || !ctx->be || !old_base || old_len == 0 || !sites || max_sites == 0)
 		return DH_E_INVAL;
 	if (!ctx->be->probe)
 		return DH_E_NOENT;
@@ -692,8 +669,7 @@ int dh_scan_refs(struct dh_ctx *ctx, void *old_base, size_t old_len,
 
 		if ((i0 & ADRP_OP_MASK) != ADRP_OP)
 			continue;
-		pg = (pc & ~0xFFFULL) +
-		     ((u64)adrp_imm_pages(i0) << 12);
+		pg = (pc & ~0xFFFULL) + ((u64)adrp_imm_pages(i0) << 12);
 		if ((i1 & ADD_OP_MASK) == ADD_OP) {
 			/* ADD immediate: the sh bit[22] scales imm12 by 4096. */
 			tgt = pg + addsub_imm_off(i1);
@@ -708,9 +684,8 @@ int dh_scan_refs(struct dh_ctx *ctx, void *old_base, size_t old_len,
 			continue;
 		if (new_base) {
 			u32 out_adrp, out_follow;
-			int ret = insn_pair_retarget(i0, i1, pc, olda,
-						    (u64)(uintptr_t)new_base,
-						    &out_adrp, &out_follow);
+			int ret = insn_pair_retarget(i0, i1, pc, olda, (u64)(uintptr_t)new_base,
+						     &out_adrp, &out_follow);
 
 			if (ret != DH_OK)
 				return ret;
@@ -750,14 +725,12 @@ int dh_scan_refs(struct dh_ctx *ctx, void *old_base, size_t old_len,
  * transaction is open, %DH_E_NOSPC when @nr or a per-site length exceeds the
  * fixed undo budget, or the backend/transaction error with rollback attempted.
  */
-int dh_patch_text_batch(struct dh_ctx *ctx, void **addrs, u32 **insns,
-			size_t *lens, size_t nr)
+int dh_patch_text_batch(struct dh_ctx *ctx, void **addrs, u32 **insns, size_t *lens, size_t nr)
 {
 	size_t i;
 	int ret, rb;
 
-	if (!ctx || !ctx->initialized || !ctx->be || !addrs || !insns ||
-	    !lens || nr == 0)
+	if (!ctx || !ctx->initialized || !ctx->be || !addrs || !insns || !lens || nr == 0)
 		return DH_E_INVAL;
 	if (!ctx->be->text_write)
 		return DH_E_OPNOTSUPP;
@@ -767,8 +740,7 @@ int dh_patch_text_batch(struct dh_ctx *ctx, void **addrs, u32 **insns,
 	if (nr > DH_MAX_BATCH || nr > DH_UNDO_SLOTS)
 		return DH_E_NOSPC;
 	for (i = 0; i < nr; i++) {
-		if (!addrs[i] || !insns[i] || lens[i] == 0 ||
-		    (lens[i] & 3) != 0)
+		if (!addrs[i] || !insns[i] || lens[i] == 0 || (lens[i] & 3) != 0)
 			return DH_E_INVAL;
 		if (lens[i] > sizeof(ctx->txn.undo[0].orig))
 			return DH_E_NOSPC;
@@ -784,8 +756,7 @@ int dh_patch_text_batch(struct dh_ctx *ctx, void **addrs, u32 **insns,
 		ret = dh_txn_record(ctx, addrs[i], lens[i], DH_ROUTE_ALIAS);
 		if (ret)
 			goto rollback;
-		ret = ctx->be->text_write(addrs[i], insns[i], lens[i],
-					  DH_ROUTE_ALIAS);
+		ret = ctx->be->text_write(addrs[i], insns[i], lens[i], DH_ROUTE_ALIAS);
 		if (ret)
 			goto rollback;
 		if (ctx->be->icache_flush)

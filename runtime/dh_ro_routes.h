@@ -16,8 +16,7 @@
  * The caller is responsible for the transaction/quiesce protocol and for
  * read-back verification.  Returns DH_OK or a negative DH_E_* / errno.
  */
-int dh_ro_route_write(void *addr, const void *src, size_t len,
-		      enum dh_route route);
+int dh_ro_route_write(void *addr, const void *src, size_t len, enum dh_route route);
 
 /*
  * dh_ro_set_ro() / dh_ro_set_rw() - change page permissions for the PTE route

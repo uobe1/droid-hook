@@ -61,8 +61,8 @@ class DhContractTest(unittest.TestCase):
         # "enum X -", "DOC:" section, "X() -".
         documented = set()
         for m in re.finditer(r'/\*\*(.*?)\*/', text, re.S):
-            first = next((l.strip().lstrip('*').strip()
-                          for l in m.group(1).splitlines() if l.strip()), '')
+            first = next((line.strip().lstrip('*').strip()
+                          for line in m.group(1).splitlines() if line.strip()), '')
             d = re.match(r'^(?:define|struct|enum|union|typedef)\s+([A-Za-z_]\w*)', first)
             f = re.match(r'^([A-Za-z_]\w*)\(\)', first)
             if d:

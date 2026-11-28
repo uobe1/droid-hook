@@ -60,7 +60,7 @@ static dh_set_memory_fn dh_set_memory_ro_fn;
 
 static void *dh_route_symbol(const char *name)
 {
-	struct kprobe kp = { .symbol_name = name };
+	struct kprobe kp = {.symbol_name = name};
 	void *addr;
 
 	if (register_kprobe(&kp) != 0)
@@ -96,8 +96,7 @@ int dh_ro_set_ro(unsigned long addr, int npages)
 static int dh_ro_pte_write(void *addr, const void *src, size_t len)
 {
 	unsigned long start = (unsigned long)addr & PAGE_MASK;
-	unsigned long end = ((unsigned long)addr + len + PAGE_SIZE - 1) &
-			    PAGE_MASK;
+	unsigned long end = ((unsigned long)addr + len + PAGE_SIZE - 1) & PAGE_MASK;
 	int npages = (int)((end - start) >> PAGE_SHIFT);
 	int ret;
 
@@ -113,8 +112,7 @@ static int dh_ro_pte_write(void *addr, const void *src, size_t len)
 	return ret != 0 ? ret : DH_OK;
 }
 
-int dh_ro_route_write(void *addr, const void *src, size_t len,
-		      enum dh_route route)
+int dh_ro_route_write(void *addr, const void *src, size_t len, enum dh_route route)
 {
 	int ret;
 
@@ -139,8 +137,7 @@ int dh_ro_route_write(void *addr, const void *src, size_t len,
 
 #else /* !__KERNEL__ */
 
-int dh_ro_route_write(void *addr, const void *src, size_t len,
-		      enum dh_route route)
+int dh_ro_route_write(void *addr, const void *src, size_t len, enum dh_route route)
 {
 	(void)addr;
 	(void)src;

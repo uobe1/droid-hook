@@ -86,8 +86,7 @@ static int dh_st_rw(struct dh_rw_req *req)
 {
 	if (req == NULL || req->addr == NULL)
 		return DH_E_INVAL;
-	if ((u8 *)req->addr < dh_st_mem ||
-	    (u8 *)req->addr + req->len > dh_st_mem + DH_ST_BYTES)
+	if ((u8 *)req->addr < dh_st_mem || (u8 *)req->addr + req->len > dh_st_mem + DH_ST_BYTES)
 		return DH_E_INVAL;
 	switch (req->opcode) {
 	case 1: /* READ */
@@ -106,8 +105,7 @@ static void *dh_st_probe(const char *name)
 	return (void *)dh_st_mem;
 }
 
-static int dh_st_ro_write(void *addr, const void *src, size_t len,
-			  enum dh_route route)
+static int dh_st_ro_write(void *addr, const void *src, size_t len, enum dh_route route)
 {
 	memcpy(addr, src, len);
 	return DH_OK;
@@ -126,8 +124,7 @@ static int dh_st_patch_pointer(void *target, void *value)
 	return DH_E_OPNOTSUPP;
 }
 
-static int dh_st_text_write(void *addr, const void *src, size_t len,
-			    enum dh_route route)
+static int dh_st_text_write(void *addr, const void *src, size_t len, enum dh_route route)
 {
 	(void)addr;
 	(void)src;
@@ -151,27 +148,27 @@ static void dh_st_quiesce_end(void)
 }
 
 static struct dh_backend dh_st_be = {
-	.rw = dh_st_rw,
-	.patch_pointer = dh_st_patch_pointer,
-	.text_write = dh_st_text_write,
-	.ro_write = dh_st_ro_write,
-	.probe = dh_st_probe,
-	.icache_flush = dh_st_flush,
-	.tlb_flush = dh_st_flush,
-	.quiesce_begin = dh_st_quiesce_begin,
-	.quiesce_end = dh_st_quiesce_end,
-	.name = "dh_selftest",
-	.abi = DH_ABI,
+    .rw = dh_st_rw,
+    .patch_pointer = dh_st_patch_pointer,
+    .text_write = dh_st_text_write,
+    .ro_write = dh_st_ro_write,
+    .probe = dh_st_probe,
+    .icache_flush = dh_st_flush,
+    .tlb_flush = dh_st_flush,
+    .quiesce_begin = dh_st_quiesce_begin,
+    .quiesce_end = dh_st_quiesce_end,
+    .name = "dh_selftest",
+    .abi = DH_ABI,
 };
 
 /* ---- self-test ---- */
 
-#define DH_ST_CHECK(cond, tag)						\
-	do {								\
-		if (!(cond)) {						\
-			pr_err("DH_SELFTEST_FAIL:%s\n", tag);		\
-			return -EINVAL;					\
-		}							\
+#define DH_ST_CHECK(cond, tag)                                                                     \
+	do {                                                                                       \
+		if (!(cond)) {                                                                     \
+			pr_err("DH_SELFTEST_FAIL:%s\n", tag);                                      \
+			return -EINVAL;                                                            \
+		}                                                                                  \
 	} while (0)
 
 #ifdef DH_WITH_RUNTIME
@@ -190,7 +187,7 @@ static struct dh_backend dh_st_be = {
  */
 #define DH_ST_RW_MAX 256
 #define DH_ST_SPLIT_LEN 600
-#define DH_ST_PAGE_OFF 4000	/* first chunk must be 96 bytes */
+#define DH_ST_PAGE_OFF 4000 /* first chunk must be 96 bytes */
 
 static u8 dh_st_core_mem[8192] __aligned(4096);
 
@@ -256,8 +253,7 @@ static int dh_st_core_rw(struct dnsk_rw_req *req)
 		}
 		memcpy(req->addr, req->src, req->len);
 		if (dh_st_core_log.nr_chunks < 8)
-			dh_st_core_log.chunks[dh_st_core_log.nr_chunks++] =
-				(int)req->len;
+			dh_st_core_log.chunks[dh_st_core_log.nr_chunks++] = (int)req->len;
 		req->ret = 0;
 		return 0;
 	}
@@ -297,8 +293,7 @@ static int dh_run_runtime_selftest(void)
 	dh_st_core_api.rw = dh_st_core_rw;
 	memset(&dh_st_core_state, 0, sizeof(dh_st_core_state));
 	memset(&dh_st_rt_be, 0, sizeof(dh_st_rt_be));
-	ret = dh_core_backend_init(&dh_st_rt_be, &dh_st_core_state,
-				   &dh_st_core_api);
+	ret = dh_core_backend_init(&dh_st_rt_be, &dh_st_core_state, &dh_st_core_api);
 	DH_ST_CHECK(ret == DH_OK, "runtime_setup");
 	ret = dh_core_backend_set_page_size(&dh_st_core_state, PAGE_SIZE);
 	DH_ST_CHECK(ret == DH_OK, "runtime_setup");
@@ -337,8 +332,7 @@ static int dh_run_runtime_selftest(void)
 	memset(back, 0, sizeof(back));
 	ret = dh_read(&rt_ctx, low, back, DH_ST_SPLIT_LEN);
 	DH_ST_CHECK(ret == DH_OK, "runtime_split_readback");
-	DH_ST_CHECK(memcmp(back, pattern, DH_ST_SPLIT_LEN) == 0,
-		    "runtime_split_readback");
+	DH_ST_CHECK(memcmp(back, pattern, DH_ST_SPLIT_LEN) == 0, "runtime_split_readback");
 
 	/*
 	 * T2: one direct 600 B backend request, which is what actually
@@ -357,13 +351,11 @@ static int dh_run_runtime_selftest(void)
 	ret = dh_st_rt_be.rw(&req);
 	DH_ST_CHECK(ret == DH_OK, "runtime_split_chunks");
 	DH_ST_CHECK(dh_st_core_log.nr_chunks == 3, "runtime_split_chunks");
-	DH_ST_CHECK(dh_st_core_log.chunks[0] == 96 &&
-		    dh_st_core_log.chunks[1] == 256 &&
-		    dh_st_core_log.chunks[2] == 248, "runtime_split_chunks");
-	DH_ST_CHECK(!dh_st_core_log.bad_len && !dh_st_core_log.bad_page,
-		    "runtime_split_page");
-	DH_ST_CHECK(memcmp(low, pattern, DH_ST_SPLIT_LEN) == 0,
-		    "runtime_split_readback");
+	DH_ST_CHECK(dh_st_core_log.chunks[0] == 96 && dh_st_core_log.chunks[1] == 256 &&
+			dh_st_core_log.chunks[2] == 248,
+		    "runtime_split_chunks");
+	DH_ST_CHECK(!dh_st_core_log.bad_len && !dh_st_core_log.bad_page, "runtime_split_page");
+	DH_ST_CHECK(memcmp(low, pattern, DH_ST_SPLIT_LEN) == 0, "runtime_split_readback");
 	pr_info("DH_SELFTEST_RUNTIME_CHUNKS=%d\n", dh_st_core_log.nr_chunks);
 
 	/*
@@ -383,8 +375,7 @@ static int dh_run_runtime_selftest(void)
 	ret = dh_st_rt_be.rw(&req);
 	DH_ST_CHECK(ret != DH_OK, "runtime_restore");
 	DH_ST_CHECK(dh_st_core_log.fail_hit, "runtime_restore");
-	DH_ST_CHECK(memcmp(low, snapshot, DH_ST_SPLIT_LEN) == 0,
-		    "runtime_restore");
+	DH_ST_CHECK(memcmp(low, snapshot, DH_ST_SPLIT_LEN) == 0, "runtime_restore");
 
 	/*
 	 * T4: library atomicity for a failed 600 B write.  Record the three
@@ -415,8 +406,7 @@ static int dh_run_runtime_selftest(void)
 	DH_ST_CHECK(dh_st_core_log.fail_hit, "runtime_txn_rollback");
 	ret = dh_txn_rollback(&rt_ctx);
 	DH_ST_CHECK(ret == DH_OK, "runtime_txn_rollback");
-	DH_ST_CHECK(memcmp(base, snapshot, DH_ST_SPLIT_LEN) == 0,
-		    "runtime_txn_rollback");
+	DH_ST_CHECK(memcmp(base, snapshot, DH_ST_SPLIT_LEN) == 0, "runtime_txn_rollback");
 
 	ret = dh_ctx_fini(&rt_ctx);
 	DH_ST_CHECK(ret == DH_OK, "runtime_setup");
@@ -435,8 +425,7 @@ static struct dh_core_state dh_core_state;
 static struct dh_backend dh_core_be;
 static u64 dh_core_probe_word;
 
-static int dh_core_rw_u64(struct dnsk_core_api *api, u16 opcode, void *addr,
-			  u64 *val)
+static int dh_core_rw_u64(struct dnsk_core_api *api, u16 opcode, void *addr, u64 *val)
 {
 	struct dnsk_rw_req req;
 
@@ -455,7 +444,7 @@ static int dh_core_rw_u64(struct dnsk_core_api *api, u16 opcode, void *addr,
 
 static void *dh_kprobe_addr(const char *name)
 {
-	struct kprobe kp = { .symbol_name = name };
+	struct kprobe kp = {.symbol_name = name};
 	void *addr;
 
 	if (register_kprobe(&kp) != 0)
@@ -518,11 +507,9 @@ static int dh_core_bind(void)
 
 	/* Write only this module's own u64: a real core rw write, no kernel
 	 * global is touched. */
-	if (dh_core_rw_u64(api, DNSK_RW_WRITE, &dh_core_probe_word, &want) !=
-	    DH_OK)
+	if (dh_core_rw_u64(api, DNSK_RW_WRITE, &dh_core_probe_word, &want) != DH_OK)
 		goto fail_rw;
-	if (dh_core_rw_u64(api, DNSK_RW_READ, &dh_core_probe_word, &got) !=
-	    DH_OK)
+	if (dh_core_rw_u64(api, DNSK_RW_READ, &dh_core_probe_word, &got) != DH_OK)
 		goto fail_rw;
 	if (got != want)
 		goto fail_rw;
@@ -556,11 +543,8 @@ static u64 dh_hooktest_hits;
 /* Real, exported kernel functions with small prologues; the gate reports the
  * first one whose first four instructions the relocator can handle. */
 static const char *const dh_hooktest_targets[] = {
-	"jiffies_to_msecs",
-	"jiffies_to_usecs",
-	"msecs_to_jiffies",
-	"ktime_get_real_seconds",
-	"ktime_get_mono_fast_ns",
+    "jiffies_to_msecs",	      "jiffies_to_usecs",	"msecs_to_jiffies",
+    "ktime_get_real_seconds", "ktime_get_mono_fast_ns",
 };
 
 static noinline unsigned int dh_hooktest_replacement(unsigned long j)
@@ -570,8 +554,8 @@ static noinline unsigned int dh_hooktest_replacement(unsigned long j)
 	return 0x5a5a5a5aU;
 }
 
-static int dh_route_check(const char *marker, void *addr, const u8 *pat,
-			  size_t len, enum dh_route route)
+static int dh_route_check(const char *marker, void *addr, const u8 *pat, size_t len,
+			  enum dh_route route)
 {
 	int ret;
 
@@ -605,13 +589,13 @@ static int dh_run_route_selftest(void)
 	}
 	for (i = 0; i < (int)sizeof(pat); i++)
 		pat[i] = (u8)(0x11 + i);
-	ret = dh_route_check("DH_ROUTE_ALIAS_OK", (u8 *)page + 100, pat,
-			     sizeof(pat), DH_ROUTE_ALIAS);
+	ret =
+	    dh_route_check("DH_ROUTE_ALIAS_OK", (u8 *)page + 100, pat, sizeof(pat), DH_ROUTE_ALIAS);
 	if (ret == DH_OK) {
 		for (i = 0; i < (int)sizeof(pat); i++)
 			pat[i] = (u8)(0x22 + i);
-		ret = dh_route_check("DH_ROUTE_PTE_OK", (u8 *)page + 100,
-				     pat, sizeof(pat), DH_ROUTE_PTE);
+		ret = dh_route_check("DH_ROUTE_PTE_OK", (u8 *)page + 100, pat, sizeof(pat),
+				     DH_ROUTE_PTE);
 	}
 	dh_ro_set_rw((unsigned long)page, 2);
 	vfree(page);
@@ -644,8 +628,7 @@ static int dh_self_patch_pointer(void *target, void *value)
 	return DH_E_OPNOTSUPP;
 }
 
-static int dh_self_write(void *addr, const void *src, size_t len,
-			 enum dh_route route)
+static int dh_self_write(void *addr, const void *src, size_t len, enum dh_route route)
 {
 	return dh_ro_route_write(addr, src, len, route);
 }
@@ -692,8 +675,7 @@ static int dh_run_hooktest(void)
 	for (i = 0; i < (int)ARRAY_SIZE(dh_hooktest_targets); i++) {
 		target = dh_kprobe_addr(dh_hooktest_targets[i]);
 		if (target == NULL) {
-			pr_warn("DH_HOOKTEST_SKIP %s: not resolvable\n",
-				dh_hooktest_targets[i]);
+			pr_warn("DH_HOOKTEST_SKIP %s: not resolvable\n", dh_hooktest_targets[i]);
 			continue;
 		}
 		fn = (unsigned int (*)(unsigned long))target;
@@ -703,8 +685,7 @@ static int dh_run_hooktest(void)
 				      (void *)dh_hooktest_replacement, &hook);
 		if (ret == DH_OK)
 			break;
-		pr_warn("DH_HOOKTEST_SKIP %s: hook_install ret=%d\n",
-			dh_hooktest_targets[i], ret);
+		pr_warn("DH_HOOKTEST_SKIP %s: hook_install ret=%d\n", dh_hooktest_targets[i], ret);
 	}
 	DH_ST_CHECK(i < (int)ARRAY_SIZE(dh_hooktest_targets), "hook_target");
 	if (ret != DH_OK) {
@@ -715,15 +696,15 @@ static int dh_run_hooktest(void)
 	intercepted = fn(1000);
 	DH_ST_CHECK(intercepted == 0x5a5a5a5aU, "hook_intercept");
 	DH_ST_CHECK(dh_hooktest_hits > 0, "hook_intercept");
-	pr_info("DH_HOOKTEST_INTERCEPT_OK target=%s ret=%u hits=%llu\n",
-		dh_hooktest_targets[i], intercepted, dh_hooktest_hits);
+	pr_info("DH_HOOKTEST_INTERCEPT_OK target=%s ret=%u hits=%llu\n", dh_hooktest_targets[i],
+		intercepted, dh_hooktest_hits);
 
 	ret = dh_hook_uninstall(&hook_ctx, &hook);
 	DH_ST_CHECK(ret == DH_OK, "hook_uninstall");
 	restored = fn(1000);
 	DH_ST_CHECK(restored == original, "hook_restore");
-	pr_info("DH_HOOKTEST_RESTORED target=%s ret=%u original=%u\n",
-		dh_hooktest_targets[i], restored, original);
+	pr_info("DH_HOOKTEST_RESTORED target=%s ret=%u original=%u\n", dh_hooktest_targets[i],
+		restored, original);
 	pr_info("DH_HOOKTEST_OK\n");
 
 	dh_ctx_fini(&hook_ctx);
@@ -755,8 +736,7 @@ static int dh_run_selftest(void)
 	ret = dh_insn_gen_absolute_jump(jump, (void *)target);
 	DH_ST_CHECK(ret == DH_OK, "gen_jump_ret");
 	DH_ST_CHECK(jump[1] == (0xd61f0000u | (17u << 5)), "gen_jump_br_x17");
-	DH_ST_CHECK(((u64)jump[2] | ((u64)jump[3] << 32)) == target,
-		    "gen_jump_literal");
+	DH_ST_CHECK(((u64)jump[2] | ((u64)jump[3] << 32)) == target, "gen_jump_literal");
 
 	/* 2. A supported PC-relative class must be retargeted exactly: a B at
 	 * 0x1000 with target 0x1400, relocated to 0x2000, needs imm26 = -0x300.
@@ -778,8 +758,7 @@ static int dh_run_selftest(void)
 	{
 		u32 far_in = 0x14000000u, far_out = 0;
 
-		ret = dh_insn_relocate(&far_in, &far_out, NULL,
-				       (void *)(uintptr_t)(1ULL << 40), 1);
+		ret = dh_insn_relocate(&far_in, &far_out, NULL, (void *)(uintptr_t)(1ULL << 40), 1);
 		DH_ST_CHECK(ret == DH_E_OPNOTSUPP, "relocate_far_rejected");
 	}
 

@@ -154,8 +154,8 @@ static void from_core_req(const struct dnsk_rw_req *in, struct dh_rw_req *out)
 /* A core request is at most DNSK_RW_MAX bytes and must stay in one page.
  * Plan every chunk before the first write so a bad length is rejected with no
  * partial mutation.  Returns the chunk count or a negative DH_E_* code. */
-static int plan_chunks(const void *addr, size_t len, size_t page_size,
-		       size_t *chunks, size_t max_chunks)
+static int plan_chunks(const void *addr, size_t len, size_t page_size, size_t *chunks,
+		       size_t max_chunks)
 {
 	size_t done = 0;
 	size_t n = 0;
@@ -187,9 +187,8 @@ static int plan_chunks(const void *addr, size_t len, size_t page_size,
  * atomicity is the library dh_txn layer's job; core ABI 2 has no transaction
  * primitive, so we never claim a failed multi-chunk write left no trace - we
  * restore what we can and return the error. */
-static int save_originals(struct dh_core_state *st, void *addr,
-			  const size_t *chunks, int nr, u8 *saved,
-			  size_t saved_cap)
+static int save_originals(struct dh_core_state *st, void *addr, const size_t *chunks, int nr,
+			  u8 *saved, size_t saved_cap)
 {
 	struct dnsk_rw_req req;
 	size_t off = 0;
@@ -210,9 +209,8 @@ static int save_originals(struct dh_core_state *st, void *addr,
 	return DH_OK;
 }
 
-static void restore_originals(struct dh_core_state *st, void *addr,
-			      const size_t *chunks, const u8 *saved,
-			      int written)
+static void restore_originals(struct dh_core_state *st, void *addr, const size_t *chunks,
+			      const u8 *saved, int written)
 {
 	struct dnsk_rw_req req;
 	size_t off = 0;
@@ -233,8 +231,8 @@ static void restore_originals(struct dh_core_state *st, void *addr,
 
 /* ---- one core dispatch -------------------------------------------------- */
 
-static int issue_chunk(struct dh_core_state *st, u16 opcode, u16 flags,
-		       void *addr, const void *src, void *dst, size_t len)
+static int issue_chunk(struct dh_core_state *st, u16 opcode, u16 flags, void *addr, const void *src,
+		       void *dst, size_t len)
 {
 	struct dnsk_rw_req req;
 
@@ -307,15 +305,14 @@ static int dh_core_rw_slot(int slot, struct dh_rw_req *req)
 	if (__atomic_exchange_n(&bind->in_use, 1, __ATOMIC_ACQ_REL) != 0)
 		return DH_E_BUSY;
 
-	nr = plan_chunks(req->addr, req->len, st->page_size,
-			 bind->chunks, DH_CORE_MAX_CHUNKS);
+	nr = plan_chunks(req->addr, req->len, st->page_size, bind->chunks, DH_CORE_MAX_CHUNKS);
 	if (nr < 0) {
 		ret = nr;
 		goto out;
 	}
 	if (op == DNSK_RW_WRITE) {
-		ret = save_originals(st, req->addr, bind->chunks, nr,
-				     bind->saved, sizeof(bind->saved));
+		ret = save_originals(st, req->addr, bind->chunks, nr, bind->saved,
+				     sizeof(bind->saved));
 		if (ret != DH_OK)
 			goto out;
 	}
@@ -323,12 +320,12 @@ static int dh_core_rw_slot(int slot, struct dh_rw_req *req)
 		const void *src = req->src ? (const u8 *)req->src + off : NULL;
 		void *dst = req->dst ? (u8 *)req->dst + off : NULL;
 
-		ret = issue_chunk(st, op, req->flags, (u8 *)req->addr + off,
-				  src, dst, bind->chunks[i]);
+		ret = issue_chunk(st, op, req->flags, (u8 *)req->addr + off, src, dst,
+				  bind->chunks[i]);
 		if (ret != DH_OK) {
 			if (op == DNSK_RW_WRITE)
-				restore_originals(st, req->addr, bind->chunks,
-						  bind->saved, written);
+				restore_originals(st, req->addr, bind->chunks, bind->saved,
+						  written);
 			goto out;
 		}
 		written++;
@@ -344,9 +341,8 @@ out:
 /* Sleeping patch-backend writer: F_TEXT/F_RO route through stop_machine +
  * fixmap and must not be called from a lock-held context.  Large transfers are
  * split the same way as the data path. */
-static int dh_core_patch_write_slot(int slot, void *addr, const void *src,
-				    size_t len, enum dh_route route,
-				    u16 patch_flag)
+static int dh_core_patch_write_slot(int slot, void *addr, const void *src, size_t len,
+				    enum dh_route route, u16 patch_flag)
 {
 	struct dh_core_state *st = slot_state(slot);
 	size_t chunks[DH_CORE_MAX_CHUNKS];
@@ -363,14 +359,12 @@ static int dh_core_patch_write_slot(int slot, void *addr, const void *src,
 	if (route == DH_ROUTE_DMA)
 		return DH_E_OPNOTSUPP;
 #endif
-	nr = plan_chunks(addr, len, st->page_size,
-			 chunks, DH_CORE_MAX_CHUNKS);
+	nr = plan_chunks(addr, len, st->page_size, chunks, DH_CORE_MAX_CHUNKS);
 	if (nr < 0)
 		return nr;
 	for (i = 0; i < nr; i++) {
-		ret = issue_chunk(st, DNSK_RW_WRITE, patch_flag,
-				  (u8 *)addr + off, (const u8 *)src + off,
-				  NULL, chunks[i]);
+		ret = issue_chunk(st, DNSK_RW_WRITE, patch_flag, (u8 *)addr + off,
+				  (const u8 *)src + off, NULL, chunks[i]);
 		if (ret != DH_OK)
 			return ret;
 		off += chunks[i];
@@ -380,37 +374,35 @@ static int dh_core_patch_write_slot(int slot, void *addr, const void *src,
 
 /* Generate one independent callback set per slot.  Slot N reads only
  * dh_core_bindings[N], so multiple bound backends never alias. */
-#define DH_CORE_SLOT_FUNCS(N)                                                  \
-static int dh_core_rw_##N(struct dh_rw_req *req)                               \
-{                                                                              \
-	return dh_core_rw_slot(N, req);                                         \
-}                                                                              \
-static int dh_core_text_write_##N(void *addr, const void *src, size_t len,     \
-				  enum dh_route route)                          \
-{                                                                              \
-	return dh_core_patch_write_slot(N, addr, src, len, route,                \
-					 DNSK_RW_F_TEXT);                       \
-}                                                                              \
-static int dh_core_ro_write_##N(void *addr, const void *src, size_t len,       \
-				enum dh_route route)                            \
-{                                                                              \
-	return dh_core_patch_write_slot(N, addr, src, len, route,                \
-					 DNSK_RW_F_RO);                         \
-}                                                                              \
-static int dh_core_patch_pointer_##N(void *target, void *value)                \
-{                                                                              \
-	struct dh_core_state *st = slot_state(N);                               \
-	if (st == NULL || !st->bound || st->api->patch_pointer == NULL)         \
-		return DH_E_OPNOTSUPP;                                          \
-	return st->api->patch_pointer(target, value) == 0 ? DH_OK : DH_E_INVAL; \
-}                                                                              \
-static void *dh_core_probe_##N(const char *name)                               \
-{                                                                              \
-	struct dh_core_state *st = slot_state(N);                               \
-	if (st == NULL || !st->bound || st->api->resolve == NULL || !name)       \
-		return NULL;                                                    \
-	return st->api->resolve(name);                                          \
-}
+#define DH_CORE_SLOT_FUNCS(N)                                                                      \
+	static int dh_core_rw_##N(struct dh_rw_req *req)                                           \
+	{                                                                                          \
+		return dh_core_rw_slot(N, req);                                                    \
+	}                                                                                          \
+	static int dh_core_text_write_##N(void *addr, const void *src, size_t len,                 \
+					  enum dh_route route)                                     \
+	{                                                                                          \
+		return dh_core_patch_write_slot(N, addr, src, len, route, DNSK_RW_F_TEXT);         \
+	}                                                                                          \
+	static int dh_core_ro_write_##N(void *addr, const void *src, size_t len,                   \
+					enum dh_route route)                                       \
+	{                                                                                          \
+		return dh_core_patch_write_slot(N, addr, src, len, route, DNSK_RW_F_RO);           \
+	}                                                                                          \
+	static int dh_core_patch_pointer_##N(void *target, void *value)                            \
+	{                                                                                          \
+		struct dh_core_state *st = slot_state(N);                                          \
+		if (st == NULL || !st->bound || st->api->patch_pointer == NULL)                    \
+			return DH_E_OPNOTSUPP;                                                     \
+		return st->api->patch_pointer(target, value) == 0 ? DH_OK : DH_E_INVAL;            \
+	}                                                                                          \
+	static void *dh_core_probe_##N(const char *name)                                           \
+	{                                                                                          \
+		struct dh_core_state *st = slot_state(N);                                          \
+		if (st == NULL || !st->bound || st->api->resolve == NULL || !name)                 \
+			return NULL;                                                               \
+		return st->api->resolve(name);                                                     \
+	}
 
 DH_CORE_SLOT_FUNCS(0)
 DH_CORE_SLOT_FUNCS(1)
@@ -431,47 +423,45 @@ DH_CORE_SLOT_FUNCS(15)
 
 struct dh_core_slot_ops {
 	int (*rw)(struct dh_rw_req *req);
-	int (*text_write)(void *addr, const void *src, size_t len,
-			  enum dh_route route);
-	int (*ro_write)(void *addr, const void *src, size_t len,
-			enum dh_route route);
+	int (*text_write)(void *addr, const void *src, size_t len, enum dh_route route);
+	int (*ro_write)(void *addr, const void *src, size_t len, enum dh_route route);
 	int (*patch_pointer)(void *target, void *value);
 	void *(*probe)(const char *name);
 };
 
 static const struct dh_core_slot_ops dh_core_slot_ops[DH_CORE_MAX_BOUND] = {
-	{ dh_core_rw_0, dh_core_text_write_0, dh_core_ro_write_0,
-	  dh_core_patch_pointer_0, dh_core_probe_0 },
-	{ dh_core_rw_1, dh_core_text_write_1, dh_core_ro_write_1,
-	  dh_core_patch_pointer_1, dh_core_probe_1 },
-	{ dh_core_rw_2, dh_core_text_write_2, dh_core_ro_write_2,
-	  dh_core_patch_pointer_2, dh_core_probe_2 },
-	{ dh_core_rw_3, dh_core_text_write_3, dh_core_ro_write_3,
-	  dh_core_patch_pointer_3, dh_core_probe_3 },
-	{ dh_core_rw_4, dh_core_text_write_4, dh_core_ro_write_4,
-	  dh_core_patch_pointer_4, dh_core_probe_4 },
-	{ dh_core_rw_5, dh_core_text_write_5, dh_core_ro_write_5,
-	  dh_core_patch_pointer_5, dh_core_probe_5 },
-	{ dh_core_rw_6, dh_core_text_write_6, dh_core_ro_write_6,
-	  dh_core_patch_pointer_6, dh_core_probe_6 },
-	{ dh_core_rw_7, dh_core_text_write_7, dh_core_ro_write_7,
-	  dh_core_patch_pointer_7, dh_core_probe_7 },
-	{ dh_core_rw_8, dh_core_text_write_8, dh_core_ro_write_8,
-	  dh_core_patch_pointer_8, dh_core_probe_8 },
-	{ dh_core_rw_9, dh_core_text_write_9, dh_core_ro_write_9,
-	  dh_core_patch_pointer_9, dh_core_probe_9 },
-	{ dh_core_rw_10, dh_core_text_write_10, dh_core_ro_write_10,
-	  dh_core_patch_pointer_10, dh_core_probe_10 },
-	{ dh_core_rw_11, dh_core_text_write_11, dh_core_ro_write_11,
-	  dh_core_patch_pointer_11, dh_core_probe_11 },
-	{ dh_core_rw_12, dh_core_text_write_12, dh_core_ro_write_12,
-	  dh_core_patch_pointer_12, dh_core_probe_12 },
-	{ dh_core_rw_13, dh_core_text_write_13, dh_core_ro_write_13,
-	  dh_core_patch_pointer_13, dh_core_probe_13 },
-	{ dh_core_rw_14, dh_core_text_write_14, dh_core_ro_write_14,
-	  dh_core_patch_pointer_14, dh_core_probe_14 },
-	{ dh_core_rw_15, dh_core_text_write_15, dh_core_ro_write_15,
-	  dh_core_patch_pointer_15, dh_core_probe_15 },
+    {dh_core_rw_0, dh_core_text_write_0, dh_core_ro_write_0, dh_core_patch_pointer_0,
+     dh_core_probe_0},
+    {dh_core_rw_1, dh_core_text_write_1, dh_core_ro_write_1, dh_core_patch_pointer_1,
+     dh_core_probe_1},
+    {dh_core_rw_2, dh_core_text_write_2, dh_core_ro_write_2, dh_core_patch_pointer_2,
+     dh_core_probe_2},
+    {dh_core_rw_3, dh_core_text_write_3, dh_core_ro_write_3, dh_core_patch_pointer_3,
+     dh_core_probe_3},
+    {dh_core_rw_4, dh_core_text_write_4, dh_core_ro_write_4, dh_core_patch_pointer_4,
+     dh_core_probe_4},
+    {dh_core_rw_5, dh_core_text_write_5, dh_core_ro_write_5, dh_core_patch_pointer_5,
+     dh_core_probe_5},
+    {dh_core_rw_6, dh_core_text_write_6, dh_core_ro_write_6, dh_core_patch_pointer_6,
+     dh_core_probe_6},
+    {dh_core_rw_7, dh_core_text_write_7, dh_core_ro_write_7, dh_core_patch_pointer_7,
+     dh_core_probe_7},
+    {dh_core_rw_8, dh_core_text_write_8, dh_core_ro_write_8, dh_core_patch_pointer_8,
+     dh_core_probe_8},
+    {dh_core_rw_9, dh_core_text_write_9, dh_core_ro_write_9, dh_core_patch_pointer_9,
+     dh_core_probe_9},
+    {dh_core_rw_10, dh_core_text_write_10, dh_core_ro_write_10, dh_core_patch_pointer_10,
+     dh_core_probe_10},
+    {dh_core_rw_11, dh_core_text_write_11, dh_core_ro_write_11, dh_core_patch_pointer_11,
+     dh_core_probe_11},
+    {dh_core_rw_12, dh_core_text_write_12, dh_core_ro_write_12, dh_core_patch_pointer_12,
+     dh_core_probe_12},
+    {dh_core_rw_13, dh_core_text_write_13, dh_core_ro_write_13, dh_core_patch_pointer_13,
+     dh_core_probe_13},
+    {dh_core_rw_14, dh_core_text_write_14, dh_core_ro_write_14, dh_core_patch_pointer_14,
+     dh_core_probe_14},
+    {dh_core_rw_15, dh_core_text_write_15, dh_core_ro_write_15, dh_core_patch_pointer_15,
+     dh_core_probe_15},
 };
 
 /* ---- init / fini -------------------------------------------------------- */
@@ -489,8 +479,7 @@ static int validate_api(struct dnsk_core_api *api)
 	return DH_OK;
 }
 
-int dh_core_backend_init(struct dh_backend *be, struct dh_core_state *st,
-			 struct dnsk_core_api *api)
+int dh_core_backend_init(struct dh_backend *be, struct dh_core_state *st, struct dnsk_core_api *api)
 {
 	int ret, slot;
 	const struct dh_core_slot_ops *ops;
@@ -563,8 +552,7 @@ int dh_core_backend_set_page_size(struct dh_core_state *st, size_t page_size)
 {
 	if (st == NULL || !st->bound)
 		return DH_E_INVAL;
-	if (page_size != 0 && (page_size < DNSK_RW_MAX ||
-			       (page_size & (page_size - 1)) != 0))
+	if (page_size != 0 && (page_size < DNSK_RW_MAX || (page_size & (page_size - 1)) != 0))
 		return DH_E_INVAL;
 	st->page_size = page_size ? page_size : DNSK_RW_MAX;
 	return DH_OK;

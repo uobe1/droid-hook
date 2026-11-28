@@ -34,13 +34,13 @@ static int be_rw(struct dh_rw_req *req)
 
 	if (p < mem || p + req->len > mem + MEM_BYTES)
 		return DH_E_INVAL;
-	if (req->opcode == 1) {          /* READ */
+	if (req->opcode == 1) { /* READ */
 		if (rw_read_fail_ret)
-			return rw_read_fail_ret;    /* inject a real read failure */
+			return rw_read_fail_ret; /* inject a real read failure */
 		memcpy(req->dst, req->addr, req->len);
 		return DH_OK;
 	}
-	if (req->opcode == 2) {          /* WRITE */
+	if (req->opcode == 2) { /* WRITE */
 		memcpy(req->addr, req->src, req->len);
 		return DH_OK;
 	}
@@ -73,8 +73,7 @@ static int be_patch_pointer(void *target, void *value)
 	return DH_OK;
 }
 
-static int be_text_write(void *addr, const void *src, size_t len,
-			 enum dh_route route)
+static int be_text_write(void *addr, const void *src, size_t len, enum dh_route route)
 {
 	(void)addr;
 	(void)src;
@@ -95,21 +94,25 @@ static void be_tlb_flush(void *addr, size_t len)
 	(void)len;
 }
 
-static void be_quiesce_begin(void) { }
-static void be_quiesce_end(void) { }
+static void be_quiesce_begin(void)
+{
+}
+static void be_quiesce_end(void)
+{
+}
 
 static struct dh_backend be = {
-	.rw = be_rw,
-	.patch_pointer = be_patch_pointer,
-	.text_write = be_text_write,
-	.ro_write = be_ro_write,
-	.probe = be_probe,
-	.icache_flush = be_icache_flush,
-	.tlb_flush = be_tlb_flush,
-	.quiesce_begin = be_quiesce_begin,
-	.quiesce_end = be_quiesce_end,
-	.name = "preflight_harness",
-	.abi = DH_ABI,
+    .rw = be_rw,
+    .patch_pointer = be_patch_pointer,
+    .text_write = be_text_write,
+    .ro_write = be_ro_write,
+    .probe = be_probe,
+    .icache_flush = be_icache_flush,
+    .tlb_flush = be_tlb_flush,
+    .quiesce_begin = be_quiesce_begin,
+    .quiesce_end = be_quiesce_end,
+    .name = "preflight_harness",
+    .abi = DH_ABI,
 };
 
 int main(int argc, char **argv)
@@ -143,7 +146,7 @@ int main(int argc, char **argv)
 		struct dh_ctx zeroed;
 
 		memset(&zeroed, 0, sizeof(zeroed));
-		zeroed.be = &be;    /* valid backend, but initialized == 0 */
+		zeroed.be = &be; /* valid backend, but initialized == 0 */
 		printf("preflight_uninit=%d\n", dh_preflight(&zeroed));
 	} else if (strcmp(argv[1], "probe_ok") == 0) {
 		ret = dh_probe_protection(&ctx, mem + 64, &route);

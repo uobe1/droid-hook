@@ -51,8 +51,8 @@ struct call_log {
 };
 static struct call_log log[MAX_LOG];
 static int nr_log;
-static int fail_at = -1;      /* inject failure at this 1-based call index */
-static int fail_errno = -5;   /* EIO-ish, distinct from DH_E_* */
+static int fail_at = -1;    /* inject failure at this 1-based call index */
+static int fail_errno = -5; /* EIO-ish, distinct from DH_E_* */
 
 static void reset_mock(void)
 {
@@ -186,18 +186,16 @@ static void dump_log(void)
 
 	printf("CALLS=%d\n", nr_log);
 	for (i = 0; i < nr_log; i++)
-		printf("CALL %d opcode=%u flags=%u len=%zu off=%zu ret=%d\n",
-		       i + 1, log[i].opcode, log[i].flags, log[i].len,
-		       log[i].off, log[i].ret);
+		printf("CALL %d opcode=%u flags=%u len=%zu off=%zu ret=%d\n", i + 1, log[i].opcode,
+		       log[i].flags, log[i].len, log[i].off, log[i].ret);
 }
 
 static void dump_backend(void)
 {
 	printf("BACKEND name=%s abi=%u rw=%p text=%p ro=%p probe=%p pp=%p\n",
-	       be.name ? be.name : "(null)", be.abi,
-	       (void *)(uintptr_t)be.rw, (void *)(uintptr_t)be.text_write,
-	       (void *)(uintptr_t)be.ro_write, (void *)(uintptr_t)be.probe,
-	       (void *)(uintptr_t)be.patch_pointer);
+	       be.name ? be.name : "(null)", be.abi, (void *)(uintptr_t)be.rw,
+	       (void *)(uintptr_t)be.text_write, (void *)(uintptr_t)be.ro_write,
+	       (void *)(uintptr_t)be.probe, (void *)(uintptr_t)be.patch_pointer);
 }
 
 static int scenario_init(void)
@@ -329,8 +327,8 @@ static long arg_long(const char *s, long dflt)
  * sequence instead of hardcoding it: PAGE, CHUNK_MAX, BASE_ALIGN (mock_mem
  * modulo the page), START and LEN.
  */
-static int scenario_split(const char *mode, const char *a_off,
-			  const char *a_len, const char *a_fail)
+static int scenario_split(const char *mode, const char *a_off, const char *a_len,
+			  const char *a_fail)
 {
 	struct dh_rw_req req;
 	static u8 big[600];
@@ -358,8 +356,7 @@ static int scenario_split(const char *mode, const char *a_off,
 	page = dh_core_backend_page_size(&st);
 	printf("PAGE=%zu\n", page);
 	printf("CHUNK_MAX=%d\n", DNSK_RW_MAX);
-	printf("BASE_ALIGN=%zu\n",
-	       (size_t)((unsigned long)mock_mem & (page - 1)));
+	printf("BASE_ALIGN=%zu\n", (size_t)((unsigned long)mock_mem & (page - 1)));
 	printf("START=%zu LEN=%zu\n", start_off, len);
 
 	memset(&req, 0, sizeof(req));
@@ -372,9 +369,9 @@ static int scenario_split(const char *mode, const char *a_off,
 	if (fail_l > 0)
 		fail_at = (int)fail_l;
 	else if (strcmp(mode, "fail") == 0)
-		fail_at = 3;      /* legacy default: fail during save_originals */
+		fail_at = 3; /* legacy default: fail during save_originals */
 	else if (strcmp(mode, "fail_write") == 0)
-		fail_at = 5;      /* legacy default: fail on the 2nd WRITE */
+		fail_at = 5; /* legacy default: fail on the 2nd WRITE */
 
 	rc = be.rw(&req);
 	printf("RC=%d\n", rc);
@@ -450,10 +447,10 @@ int main(int argc, char **argv)
 	if (strcmp(argv[1], "flags") == 0)
 		return argc > 2 ? scenario_flags(argv[2]) : 2;
 	if (strcmp(argv[1], "split") == 0)
-		return argc > 2 ? scenario_split(argv[2],
-						 argc > 3 ? argv[3] : NULL,
-						 argc > 4 ? argv[4] : NULL,
-						 argc > 5 ? argv[5] : NULL) : 2;
+		return argc > 2
+			   ? scenario_split(argv[2], argc > 3 ? argv[3] : NULL,
+					    argc > 4 ? argv[4] : NULL, argc > 5 ? argv[5] : NULL)
+			   : 2;
 	if (strcmp(argv[1], "probe") == 0)
 		return scenario_probe();
 	if (strcmp(argv[1], "patch_pointer") == 0)

@@ -39,20 +39,18 @@ static int h_fail_rw_call_ret;
 static int h_rw_calls;
 static int h_scratch[256];
 
-static const char *h_sym_names[H_NR_SYMS] = {
-	"cgroup_subsys", "sys_call_table", "init_mm", "_stext"
-};
+static const char *h_sym_names[H_NR_SYMS] = {"cgroup_subsys", "sys_call_table", "init_mm",
+					     "_stext"};
 static void *h_sym_addrs[H_NR_SYMS];
 
 /* Opcode numbers must match dh_rw.c's out-of-band contract. */
-#define H_OP_READ  1
+#define H_OP_READ 1
 #define H_OP_WRITE 2
-#define H_OP_XCHG  3
-#define H_OP_CAS   4
+#define H_OP_XCHG 3
+#define H_OP_CAS 4
 #define H_OP_PROBE 5
 
-static int h_ro_write(void *addr, const void *src, size_t len,
-		      enum dh_route route);
+static int h_ro_write(void *addr, const void *src, size_t len, enum dh_route route);
 
 static void h_init_syms(void)
 {
@@ -152,15 +150,13 @@ static int h_patch_pointer(void *target, void *value)
 	return DH_OK;
 }
 
-static int h_text_write(void *addr, const void *src, size_t len,
-			enum dh_route route)
+static int h_text_write(void *addr, const void *src, size_t len, enum dh_route route)
 {
 	(void)route;
 	return h_ro_write(addr, src, len, route);
 }
 
-static int h_ro_write(void *addr, const void *src, size_t len,
-		      enum dh_route route)
+static int h_ro_write(void *addr, const void *src, size_t len, enum dh_route route)
 {
 	unsigned long off = (unsigned long)addr - (unsigned long)h_mem;
 
@@ -222,19 +218,19 @@ static void h_quiesce_end(void)
 }
 
 static struct dh_backend h_backend = {
-	.rw = h_rw,
-	.patch_pointer = h_patch_pointer,
-	.text_write = h_text_write,
-	.ro_write = h_ro_write,
-	.probe = h_probe,
-	.alloc = h_alloc,
-	.free = h_free,
-	.icache_flush = h_icache_flush,
-	.tlb_flush = h_tlb_flush,
-	.quiesce_begin = h_quiesce_begin,
-	.quiesce_end = h_quiesce_end,
-	.name = "host-mock",
-	.abi = DH_ABI,
+    .rw = h_rw,
+    .patch_pointer = h_patch_pointer,
+    .text_write = h_text_write,
+    .ro_write = h_ro_write,
+    .probe = h_probe,
+    .alloc = h_alloc,
+    .free = h_free,
+    .icache_flush = h_icache_flush,
+    .tlb_flush = h_tlb_flush,
+    .quiesce_begin = h_quiesce_begin,
+    .quiesce_end = h_quiesce_end,
+    .name = "host-mock",
+    .abi = DH_ABI,
 };
 
 /* ---- Python-facing accessors (plain C ABI, no pybind) ---- */
@@ -375,8 +371,7 @@ int dh_harness_txn_record(unsigned long off, size_t len, int route)
 {
 	if (off >= H_MEM_SIZE || off + len > H_MEM_SIZE)
 		return DH_E_INVAL;
-	return dh_txn_record(&h_ctx, h_mem + off, len,
-			     (enum dh_route)route);
+	return dh_txn_record(&h_ctx, h_mem + off, len, (enum dh_route)route);
 }
 
 int dh_harness_txn_commit(void)

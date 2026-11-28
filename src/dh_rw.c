@@ -20,14 +20,14 @@
  * runtime and this library must agree on these numeric values out of band.
  * This is reported to the lead as a contract gap; do not renumber here.
  */
-#define DH_OP_READ	1
-#define DH_OP_WRITE	2
-#define DH_OP_XCHG	3
-#define DH_OP_CAS	4
-#define DH_OP_PROBE	5
+#define DH_OP_READ 1
+#define DH_OP_WRITE 2
+#define DH_OP_XCHG 3
+#define DH_OP_CAS 4
+#define DH_OP_PROBE 5
 
-#define DH_RW_MAX	256
-#define DH_PAGE_SIZE	4096UL
+#define DH_RW_MAX 256
+#define DH_PAGE_SIZE 4096UL
 
 /* Implemented in dh_txn.c; library-internal, intentionally absent from dh.h. */
 void dh_txn_reset(struct dh_ctx *ctx);
@@ -86,9 +86,8 @@ static int dh_backend_mandatory(const struct dh_backend *be)
 	 * alloc/free are the only optional primitives (see dh.h).  Every other
 	 * function pointer must be present before a ctx may be bound.
 	 */
-	return be->rw && be->patch_pointer && be->text_write && be->ro_write &&
-	       be->probe && be->icache_flush && be->tlb_flush &&
-	       be->quiesce_begin && be->quiesce_end;
+	return be->rw && be->patch_pointer && be->text_write && be->ro_write && be->probe &&
+	       be->icache_flush && be->tlb_flush && be->quiesce_begin && be->quiesce_end;
 }
 
 int dh_ctx_init(struct dh_ctx *ctx, struct dh_backend *be, const char *owner)
