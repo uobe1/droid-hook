@@ -36,7 +36,7 @@ class DhContractTest(unittest.TestCase):
         cls.out = compile_and_run()
 
     def test_public_constants(self):
-        self.assertIn('DH_ABI=1 DH_KEY_LEN=48 DH_UNDO_SLOTS=8 DH_MAX_BATCH=64',
+        self.assertIn('DH_ABI=2 DH_KEY_LEN=48 DH_UNDO_SLOTS=8 DH_MAX_BATCH=64',
                       self.out)
 
     def test_structs_nonempty(self):

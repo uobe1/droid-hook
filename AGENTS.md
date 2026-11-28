@@ -73,3 +73,9 @@ marker 命名建议 `DH_*_INTERCEPT_OK` / `DH_*_RESTORED`，缺一即未完成�
 
 读到内核/上游源码并据此做判断时，先把结论写进 `docs/notes/`：
 **语义 + `文件:行号` + 为什么这样决定**。只留在对话里等于没做——下一个人得重读同样的代码。
+
+## Notes (index)
+
+- [On inline call-through gap](./docs/notes/On-inline-call-through-gap.md) —
+  入口跳转直达 replacement, relo 区不可执行且无公开指针; suite feature 迁移
+  需要 origin 调用的结论与决定

@@ -2,9 +2,20 @@ name: build
 
 # Dispatch-only, like the sibling projects: a push must not silently consume an
 # Action, and the same gate must not run twice.
+#
+# Release policy: a stable release is a git tag on a gated commit; the default
+# branch is the permanent dev line and is never itself a release.  Providing
+# `release_tag` at dispatch creates that annotated tag only after every gate
+# above has passed on this commit.  No version bump or cadence is implied here.
 on:
   workflow_call:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Annotated git tag to create on this gated commit (empty = no release)'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -111,3 +122,32 @@ jobs:
           name: droid-hook-android16-6.12
           path: out/
           if-no-files-found: error
+
+  # Optional stable release: tag the commit only after host and kernel gates
+  # passed.  A no-op unless the dispatcher supplied `release_tag`.
+  release:
+    needs: [host, build]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create and push annotated tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          test -n "${RELEASE_TAG}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Never move or reuse an existing tag: a stable release is immutable.
+          if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            echo "tag ${RELEASE_TAG} already exists" >&2
+            exit 1
+          fi
+          git tag -a "${RELEASE_TAG}" -m "droid-hook ${RELEASE_TAG}"
+          git push origin "refs/tags/${RELEASE_TAG}"

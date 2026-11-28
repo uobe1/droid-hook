@@ -123,7 +123,20 @@ class DhHookTest(unittest.TestCase):
         lib.harness_partial_text_write.restype = None
         lib.harness_fail_txn_rollback.argtypes = [ctypes.c_int]
         lib.harness_fail_txn_rollback.restype = None
+        lib.harness_fail_txn_begin.argtypes = [ctypes.c_int]
+        lib.harness_fail_txn_begin.restype = None
         lib.harness_text_write_quiesce.restype = ctypes.c_int
+        lib.harness_set_exec_alloc.argtypes = [ctypes.c_int]
+        lib.harness_set_exec_alloc.restype = None
+        lib.harness_fail_exec_alloc.argtypes = [ctypes.c_int]
+        lib.harness_fail_exec_alloc.restype = None
+        lib.harness_exec_alloc_calls.restype = ctypes.c_int
+        lib.harness_exec_free_calls.restype = ctypes.c_int
+        lib.harness_exec_last_ptr.restype = ctypes.c_void_p
+        lib.harness_origin.argtypes = [HOOK_PTR]
+        lib.harness_origin.restype = ctypes.c_void_p
+        lib.harness_exec_free_quiesce.restype = ctypes.c_int
+        lib.harness_exec_free_text_writes.restype = ctypes.c_int
         lib.harness_install_at.argtypes = [ctypes.c_char_p, ctypes.c_void_p,
                                            ctypes.c_void_p]
         lib.harness_install_at.restype = HookResult
@@ -412,6 +425,23 @@ class DhHookTest(unittest.TestCase):
         self.assertEqual(log, ['skip', 'after'],
                          'origin must not run when a before skips it')
 
+    def test_first_nonzero_before_wins(self):
+        """All befores run in order, but the first non-zero result is the one
+        propagated; later befores must not overwrite it."""
+        r, h = self.install()
+        self.assertEqual(r.ret, DH_OK)
+        log = []
+        first = BEFORE(lambda _a: (log.append('first'), 2)[1])
+        second = BEFORE(lambda _a: (log.append('second'), 3)[1])
+        origin = ORIGIN(lambda _a: (log.append('origin'), 0)[1])
+        _CALLBACKS.extend([first, second, origin])
+        self.assertEqual(self.lib.harness_wrap(h, first, None), DH_OK)
+        self.assertEqual(self.lib.harness_wrap(h, second, None), DH_OK)
+        ret = self.lib.harness_chain_run(h, None, origin)
+        self.assertEqual(ret, 2, 'first non-zero result must win')
+        self.assertEqual(log, ['first', 'second'],
+                         'all befores run, and origin is skipped')
+
     def test_wrap_bounded_and_invalid(self):
         r, h = self.install()
         self.assertEqual(r.ret, DH_OK)
@@ -486,6 +516,135 @@ class DhHookTest(unittest.TestCase):
                          'trampoline must survive a failed unload')
         self.assertEqual(self.lib.harness_quiesce_depth(), 0,
                          'quiesce still balanced on the error path')
+
+    # ---- executable origin (call-through) ----
+
+    def test_origin_is_null_without_exec_alloc(self):
+        """No alloc_exec means the relo block is plain data, so no callable
+        origin may be advertised."""
+        r, h = self.install()
+        self.assertEqual(r.ret, DH_OK)
+        self.assertIsNone(self.lib.harness_origin(h),
+                          'no exec block -> origin must be NULL')
+        self.assertEqual(self.lib.harness_uninstall(h), DH_OK)
+        self.assertIsNone(self.lib.harness_origin(h),
+                          'origin stays NULL after uninstall')
+
+    def test_origin_points_at_exec_block_with_relocated_words(self):
+        """With alloc_exec the relocated sequence plus back jump must be copied
+        into backend exec memory, and dh_hook_origin() must point there."""
+        self.lib.harness_set_exec_alloc(1)
+        r, h = self.install()
+        self.assertEqual(r.ret, DH_OK, 'install with exec allocator')
+        origin = self.lib.harness_origin(h)
+        self.assertIsNotNone(origin, 'origin must be the exec block')
+        self.assertEqual(origin, self.lib.harness_exec_last_ptr(),
+                         'origin must be the block alloc_exec returned')
+        self.assertEqual(self.lib.harness_exec_alloc_calls(), 1,
+                         'exactly one exec allocation per install')
+        # Words 0..3 are the four displaced instructions, relocated; words
+        # 4..7 are the absolute jump back to target+16, all read through the
+        # public relo accessors which now read the exec block.
+        for i in range(DH_ORIGIN_INSNS):
+            self.assertEqual(self.lib.harness_relo_word(h, i),
+                             (0x1000 + i) ^ 0xA5A5A5A5)
+        self.assertEqual(self.lib.harness_relo_len(h),
+                         DH_ORIGIN_INSNS + DH_JUMP_INSNS)
+        base = self.lib.harness_text() + 16
+        self.assertEqual(self.lib.harness_relo_word(h, 4), 0xD4000000)
+        self.assertEqual(self.lib.harness_relo_word(h, 5), 0xD4000001)
+        self.assertEqual(self.lib.harness_relo_word(h, 6), base & 0xFFFFFFFF)
+        self.assertEqual(self.lib.harness_relo_word(h, 7), (base >> 32) & 0xFFFFFFFF)
+        self.assertEqual(self.lib.harness_uninstall(h), DH_OK)
+
+    def test_exec_alloc_failure_fails_install_cleanly(self):
+        """A failed exec allocation must fail the install with no silent
+        non-executable fallback and no leaked registry/trampoline."""
+        self.lib.harness_set_exec_alloc(1)
+        self.lib.harness_fail_exec_alloc(1)
+        r, _ = self.install()
+        self.assertEqual(r.ret, DH_E_NOSPC)
+        self.assertEqual(self.lib.harness_exec_alloc_calls(), 1)
+        self.assertEqual(self.lib.harness_exec_free_calls(), 0,
+                         'a failed allocation is never freed')
+        self.assertEqual(self.lib.harness_registry_count(), 0,
+                         'no registry claim may survive')
+        self.assertEqual(self.lib.harness_live_tramps(), 0,
+                         'trampoline must be released')
+        self.assertEqual(self.lib.harness_text_writes(), 0,
+                         'never reached the text')
+        self.assertEqual(self.lib.harness_text_word(0), 0x1000)
+
+    def test_uninstall_frees_exec_block_once_after_restore(self):
+        self.lib.harness_set_exec_alloc(1)
+        r, h = self.install()
+        self.assertEqual(r.ret, DH_OK)
+        origin = self.lib.harness_origin(h)
+        self.assertEqual(self.lib.harness_exec_free_calls(), 0)
+        self.assertEqual(self.lib.harness_uninstall(h), DH_OK)
+        self.assertEqual(self.lib.harness_exec_free_calls(), 1,
+                         'exec block freed exactly once')
+        self.assertEqual(self.lib.harness_exec_last_ptr(), origin,
+                         'the freed block must be the origin block')
+        self.assertEqual(self.lib.harness_exec_free_quiesce(), 1,
+                         'exec block freed inside the restore window')
+        self.assertGreaterEqual(
+            self.lib.harness_exec_free_text_writes(), 1,
+            'entry must be restored before the exec block is freed')
+        self.assertIsNone(self.lib.harness_origin(h),
+                          'origin gone after uninstall')
+
+    def test_post_publish_failure_leaks_exec_block_but_drops_claim(self):
+        """Once the entry jump may have been published, a CPU can be inside
+        the exec origin block even after a successful rollback.  Freeing it
+        then is a use-after-free, so it must be leaked; chain, trampoline and
+        registry claim follow the normal post-rollback rules."""
+        self.lib.harness_set_exec_alloc(1)
+        self.lib.harness_fail_text_write(1)
+        r, _ = self.install()
+        self.assertEqual(r.ret, DH_E_QUIESCE)
+        self.assertEqual(self.lib.harness_exec_alloc_calls(), 1)
+        self.assertEqual(self.lib.harness_exec_free_calls(), 0,
+                         'published exec block must be leaked, not freed')
+        self.assertEqual(self.lib.harness_registry_count(), 0,
+                         'claim is dropped after a successful rollback')
+        self.assertEqual(self.lib.harness_live_tramps(), 0,
+                         'trampoline released after a successful rollback')
+        self.assertEqual(self.lib.harness_free_count(), 2,
+                         'chain and trampoline are still freed')
+        self.assertEqual(self.lib.harness_text_word(0), 0x1000,
+                         'entry must be restored by rollback')
+
+    def test_pre_publish_failure_frees_exec_block(self):
+        """A failure before the entry write means no CPU could have entered
+        the replacement, so the exec block is safe to free."""
+        self.lib.harness_set_exec_alloc(1)
+        self.lib.harness_fail_txn_begin(1)
+        r, _ = self.install()
+        self.assertEqual(r.ret, DH_E_BUSY)
+        self.assertEqual(self.lib.harness_exec_alloc_calls(), 1)
+        self.assertEqual(self.lib.harness_exec_free_calls(), 1,
+                         'pre-publish exec block must be freed')
+        self.assertEqual(self.lib.harness_text_writes(), 0,
+                         'never reached the entry write')
+        self.assertEqual(self.lib.harness_registry_count(), 0)
+        self.assertEqual(self.lib.harness_live_tramps(), 0)
+
+    def test_failed_uninstall_keeps_exec_block(self):
+        """A restore that cannot be verified must not free the exec block the
+        still-installed entry may jump into."""
+        self.lib.harness_set_exec_alloc(1)
+        r, h = self.install()
+        self.assertEqual(r.ret, DH_OK)
+        self.lib.harness_lie_text_write(1)
+        ret = self.lib.harness_uninstall(h)
+        self.assertEqual(ret, DH_E_VERIFY)
+        self.assertEqual(self.lib.harness_exec_free_calls(), 0,
+                         'failed uninstall must not free the exec block')
+        self.assertIsNotNone(self.lib.harness_origin(h),
+                             'origin must survive a failed uninstall')
+        self.assertEqual(h.contents.installed, 1)
+        self.lib.harness_lie_text_write(0)
 
     # ---- shadow ----
 

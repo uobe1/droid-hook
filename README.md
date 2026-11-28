@@ -50,11 +50,33 @@ static_call / text_poke 的设计, 自行实现库与运行时, 不引入 Kernel
 | `src/dh_rw.c` | ctx 生命周期与 RW 包装 | 256B/页切分; 每次 WRITE 读回校验; 事务内 backend 错误或校验读失败置 `txn.failed`; 8 字节对齐检查; backend 缺失或 abi 不符返回 `DH_E_INVAL` |
 | `src/dh_txn.c` | 事务与回滚 | undo 静态 8 槽零分配; 存原字节; 逆序 replay; 满槽 `DH_E_NOSPC`; 读回不一致 `DH_E_VERIFY` 并让 commit 自动回滚; 回滚在单个 quiesce 窗口内 |
 | `src/dh_insn.c` | arm64 编码与引用重定位 | 绝对跳转 `LDR X17,#8; BR X17;<literal>`; ADRP/ADR/B/BL/B.cond/CBZ/CBNZ/TBZ/TBNZ/LDR literal(含 SIMD) 重编码; 成对 ADRP+ADD/LDR 重定位 fail-closed; ±4GiB 与 ±1MiB 范围检查; 批量补丁开自身事务、逐站读回校验、失败只回滚自身写入 |
-| `src/dh_hook.c` | 函数级 trampoline | 覆盖前 4 条指令 + relo 区 + 跳回第 5 条; key 与 target 双重唯一; 地址仲裁; before 正序 / after 逆序 / skip_origin; 安装入口写入在单个 quiesce 窗口内并读回校验; 回滚失败时不释放 trampoline/chain 且保留 registry 占用; 卸载逆序且在 quiesce 窗口内 |
+| `src/dh_hook.c` | 函数级 trampoline | 覆盖前 4 条指令 + relo 区 + 跳回第 5 条; key 与 target 双重唯一; 地址仲裁; 入口写入在单个 quiesce 窗口内并读回校验; 回滚失败时不释放 trampoline/chain 且保留 registry 占用; 卸载逆序且在 quiesce 窗口内且校验后才释放; backend 提供 `alloc_exec` 时把 relo 块放进可执行内存, `dh_hook_origin()` 返回该块 (DH_ABI 2) |
 | `src/dh_shadow.c` | `<obj,id>` 侧表 | 不改父对象 layout; get-or-alloc 幂等; 延迟回收至最后一个引用 |
 | `src/dh_preflight.c` | 预检与保护探测 | `dh_preflight` 校验 ctx/backend/abi/未决事务; `dh_probe_protection` 以同字节写 + 读回校验探测 RO 路由, 读/写/校验失败原样返回真实 errno |
 | `runtime/dh_core_backend.c` | ABI 5 适配 | `rw`/`patch_pointer`/`resolve` 映射; magic/abi 校验; `F_TEXT`/`F_RO` 走会睡眠的 patch 后端; 数据路径 `flags=0` 不进 stop_machine; 16 槽 trampoline |
 | `runtime/dh_ro_routes.c` | RO 写入路由 | ALIAS = 目标页 `vmap` 可写别名写入; PTE = kprobe 解析 `set_memory_rw/ro` 后改写 PTE 再恢复; FIXMAP 交 core; DMA fail-closed `DH_E_OPNOTSUPP`; 写完 `flush_icache_range` |
+
+### 调用穿透 (call-through)
+
+入口路径把目标前 4 条指令改写为绝对跳转, 直达 `replacement`; 它不经过
+chain. `before` 正序 / `after` 逆序 / `skip_origin` 只存在于 `dh_hook_chain_run()`,
+那是库内函数, 安装路径不会调用它. 该函数里每个 before 都按注册顺序执行, 首个
+非零 before 结果作为跳过 origin 的返回值.
+
+需要继续原逻辑的 replacement 必须与 target 原型完全一致, 并调用
+`dh_hook_origin(hook)` 继续执行原函数. 该指针指向 relocated origin 块 (原前 4 条
+指令的搬迁序列 + 跳回 target+16). 只有 backend 提供 `alloc_exec`/`free_exec` 时
+该块存在于可执行内存并由 `dh_hook_origin()` 返回; backend 未提供时保持旧布局
+(relo 块在 trampoline 内, 不可执行), `dh_hook_origin()` 返回 NULL. 安装时 exec
+块分配失败以 `DH_E_NOSPC` 失败, 不回退到不可执行布局; 卸载在校验入口恢复后才
+释放 exec 块, 校验失败的卸载保留它. 安装一旦已发出入口写入, 之后即使回滚成功也
+不释放 exec 块 (可能有 CPU 正在其中执行), 只释放 chain/trampoline 并释放
+registry 占用; 只有入口写入之前的失败才释放 exec 块.
+
+DH_ABI 2 因 `struct dh_backend` 末尾追加 `alloc_exec`/`free_exec` 而递增.
+host 单测验证 origin 指针指向 exec 块、块内容等于搬迁序列加跳回、无
+`alloc_exec` 时 origin 为 NULL、分配失败不泄漏、卸载恰好释放一次、失败卸载不
+释放; 未在 AArch64 上实际执行 origin, 也未经真机 call-through 验证.
 
 ### 指令编码契约
 

@@ -14,6 +14,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 /* Internal test surface: defined in the two .c files under test, deliberately
  * not exposed in dh.h.  Declared here so -Werror=implicit-function-declaration
@@ -49,7 +51,20 @@ static int g_text_write_lie;
 static int g_text_write_partial;
 static int g_text_write_quiesce;
 static int g_txn_rollback_ret;
+static int g_txn_begin_fail;
 static int g_arbitrate_reject;
+
+/* Optional executable allocator.  Off by default so the pre-existing layout
+ * tests keep seeing the legacy in-trampoline relo buffer; a test that wants a
+ * call-through origin enables it with harness_set_exec_alloc(1). */
+static int g_exec_fail;
+static int g_exec_alloc_calls;
+static int g_exec_free_calls;
+static void *g_exec_last_ptr;
+static size_t g_exec_last_size;
+static int g_exec_free_quiesce;
+static int g_exec_free_text_writes;
+static void *g_exec_live_ptr;
 
 static void *g_arbitrate_last_addr;
 static char g_arbitrate_last_key[DH_KEY_LEN];
@@ -136,6 +151,8 @@ int dh_txn_begin(struct dh_ctx *ctx)
 	if (!ctx)
 		return DH_E_INVAL;
 	g_txn_begin_calls++;
+	if (g_txn_begin_fail)
+		return DH_E_BUSY;
 	ctx->txn.active = 1;
 	ctx->txn.n = 0;
 	ctx->txn.failed = 0;
@@ -302,6 +319,37 @@ static void h_free(const void *p)
 	free((void *)p);
 }
 
+static void *h_alloc_exec(size_t size)
+{
+	size_t page = (size_t)sysconf(_SC_PAGESIZE);
+	void *p;
+
+	g_exec_alloc_calls++;
+	if (g_exec_fail)
+		return NULL;
+	if (size == 0)
+		size = 1;
+	size = ((size + page - 1) / page) * page;
+	p = mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC,
+		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED)
+		return NULL;
+	g_exec_live_ptr = p;
+	g_exec_last_ptr = p;
+	g_exec_last_size = size;
+	return p;
+}
+
+static void h_free_exec(const void *p)
+{
+	g_exec_free_calls++;
+	g_exec_last_ptr = (void *)p;
+	g_exec_free_quiesce = g_quiesce_depth;
+	g_exec_free_text_writes = g_text_writes;
+	if (p)
+		munmap((void *)p, g_exec_last_size);
+}
+
 static void h_icache_flush(void *addr, size_t len)
 {
 	(void)addr; (void)len;
@@ -381,9 +429,20 @@ void harness_reset(int reject)
 	g_text_write_partial = 0;
 	g_text_write_quiesce = 0;
 	g_txn_rollback_ret = 0;
+	g_txn_begin_fail = 0;
 	g_arbitrate_reject = reject;
 	g_arbitrate_last_addr = NULL;
 	memset(g_arbitrate_last_key, 0, sizeof(g_arbitrate_last_key));
+	g_exec_fail = 0;
+	g_exec_alloc_calls = 0;
+	g_exec_free_calls = 0;
+	g_exec_last_ptr = NULL;
+	g_exec_last_size = 0;
+	g_exec_free_quiesce = 0;
+	g_exec_free_text_writes = 0;
+	g_exec_live_ptr = NULL;
+	g_be.alloc_exec = NULL;
+	g_be.free_exec = NULL;
 	memset(g_alloc_trace, 0, sizeof(g_alloc_trace));
 	g_alloc_n = 0;
 	memset(g_free_order, 0, sizeof(g_free_order));
@@ -615,9 +674,57 @@ void harness_fail_txn_rollback(int ret)
 	g_txn_rollback_ret = ret;
 }
 
+void harness_fail_txn_begin(int on)
+{
+	g_txn_begin_fail = on;
+}
+
 int harness_text_write_quiesce(void)
 {
 	return g_text_write_quiesce;
+}
+
+/* ---- executable allocator controls ---- */
+
+void harness_set_exec_alloc(int on)
+{
+	g_be.alloc_exec = on ? h_alloc_exec : NULL;
+	g_be.free_exec = on ? h_free_exec : NULL;
+}
+
+void harness_fail_exec_alloc(int on)
+{
+	g_exec_fail = on;
+}
+
+int harness_exec_alloc_calls(void)
+{
+	return g_exec_alloc_calls;
+}
+
+int harness_exec_free_calls(void)
+{
+	return g_exec_free_calls;
+}
+
+void *harness_exec_last_ptr(void)
+{
+	return g_exec_last_ptr;
+}
+
+void *harness_origin(struct dh_hook *hook)
+{
+	return dh_hook_origin(hook);
+}
+
+int harness_exec_free_quiesce(void)
+{
+	return g_exec_free_quiesce;
+}
+
+int harness_exec_free_text_writes(void)
+{
+	return g_exec_free_text_writes;
 }
 
 /* ---- layout / trace introspection ---- */

@@ -41,6 +41,7 @@ struct dh_trampoline {
 	size_t relo_len;
 	void *target;
 	void *replacement;
+	void *exec_origin;	/* backend alloc_exec block, or NULL */
 	u32 magic;
 };
 
@@ -153,6 +154,22 @@ static void dh_tramp_free(struct dh_ctx *ctx, void *p)
 	if (dh_live_tramps > 0)
 		dh_live_tramps--;
 	dh_pool_release();
+}
+
+/*
+ * Release a trampoline and its optional executable origin block.  The caller
+ * must already have proven the entry no longer jumps into either; on a failed
+ * uninstall the exec block is intentionally kept alive.
+ */
+static void dh_tramp_release(struct dh_ctx *ctx, struct dh_trampoline *t)
+{
+	if (!t)
+		return;
+	if (t->exec_origin && ctx && ctx->be && ctx->be->free_exec) {
+		ctx->be->free_exec(t->exec_origin);
+		t->exec_origin = NULL;
+	}
+	dh_tramp_free(ctx, t);
 }
 
 static struct dh_chain *dh_chain_alloc(struct dh_ctx *ctx)
@@ -310,10 +327,14 @@ int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
 	struct dh_chain *c;
 	u32 origin[DH_ORIGIN_INSNS];
 	u32 back[DH_JUMP_INSNS];
+	u32 relo_buf[DH_RELO_INSNS];
+	u32 *relo_dst;
+	void *relo_addr;
 	size_t klen;
 	size_t relo_nr = 0;
 	int ret;
 	int rb;
+	int published = 0;
 
 	if (!ctx || !ctx->be || !key || !target || !replacement || !out)
 		return DH_E_INVAL;
@@ -363,20 +384,42 @@ int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
 	ret = dh_insn_gen_absolute_jump(t->jump, replacement);
 	if (ret)
 		goto fail_allocs;
+
+	/* When the backend can lend executable memory, host the relocated-origin
+	 * block there so a replacement can call through to the original code.
+	 * There is no non-executable fallback: that would silently break
+	 * call-through, so a failed allocation fails the install. */
+	if (ctx->be->alloc_exec) {
+		t->exec_origin = ctx->be->alloc_exec(DH_RELO_INSNS * sizeof(u32));
+		if (!t->exec_origin) {
+			ret = DH_E_NOSPC;
+			goto fail_allocs;
+		}
+	}
+	relo_dst = t->exec_origin ? relo_buf : t->relo;
+	relo_addr = t->exec_origin ? t->exec_origin : (void *)t->relo;
+
 	/* The relocator reports how many words it actually produced, so the
-	 * back-jump goes right after them instead of at a hard-coded slot 4. */
-	ret = dh_insn_relocate_out(origin, t->relo,
+	 * back-jump goes right after them instead of at a hard-coded slot 4.
+	 * PC-relative rewrites are computed against the address the block will
+	 * actually execute at (relo_addr), not its temporary staging buffer. */
+	ret = dh_insn_relocate_out(origin, relo_dst,
 				   DH_RELO_INSNS - DH_JUMP_INSNS, &relo_nr,
-				   target, (void *)t->relo,
-				   DH_ORIGIN_INSNS);
+				   target, relo_addr, DH_ORIGIN_INSNS);
 	if (ret)
 		goto fail_allocs;
 	ret = dh_insn_gen_absolute_jump(back,
 			(void *)((unsigned char *)target + DH_INSN_BYTES));
 	if (ret)
 		goto fail_allocs;
-	memcpy(&t->relo[relo_nr], back, sizeof(back));
+	memcpy(&relo_dst[relo_nr], back, sizeof(back));
 	t->relo_len = relo_nr + DH_JUMP_INSNS;
+	if (t->exec_origin) {
+		memcpy(t->exec_origin, relo_buf, t->relo_len * sizeof(u32));
+		if (ctx->be->icache_flush)
+			ctx->be->icache_flush(t->exec_origin,
+					      t->relo_len * sizeof(u32));
+	}
 
 	ret = dh_txn_begin(ctx);
 	if (ret)
@@ -388,6 +431,7 @@ int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
 	/* Publish the entry and prove it landed inside one quiesce window: a
 	 * 16-byte instruction patch is not atomic on arm64, so other CPUs must
 	 * not be executing the target while it is rewritten. */
+	published = 1;
 	ctx->be->quiesce_begin();
 	ret = ctx->be->text_write(target, t->jump, DH_INSN_BYTES,
 				  DH_ROUTE_ALIAS);
@@ -427,9 +471,23 @@ fail_txn:
 	rb = dh_txn_rollback(ctx);
 	if (rb != DH_OK)
 		return rb;
+	if (published) {
+		/*
+		 * The entry may already have been observed jumping into
+		 * @replacement, so a CPU can still be executing inside the exec
+		 * origin block when this rollback finishes.  The rollback window
+		 * only restores the entry; it does not drain such a caller, so
+		 * freeing the block here would be a use-after-free.  Leak it
+		 * deliberately.  Chain, trampoline and registry claim still follow
+		 * the normal post-rollback rules.
+		 */
+		dh_chain_free(ctx, c);
+		dh_tramp_free(ctx, t);
+		goto fail_claim;
+	}
 fail_allocs:
 	dh_chain_free(ctx, c);
-	dh_tramp_free(ctx, t);
+	dh_tramp_release(ctx, t);
 fail_claim:
 	dh_reg_drop(key, target);
 	return ret ? ret : DH_E_INVAL;
@@ -500,7 +558,7 @@ int dh_hook_uninstall(struct dh_ctx *ctx, struct dh_hook *hook)
 	dh_chain_free(ctx, hook->chain);
 	hook->chain = NULL;
 	hook->nr_chain = 0;
-	dh_tramp_free(ctx, hook->trampoline);
+	dh_tramp_release(ctx, t);
 	hook->trampoline = NULL;
 	ctx->be->quiesce_end();
 	return DH_OK;
@@ -511,6 +569,26 @@ out_quiesce:
 	ctx->be->quiesce_end();
 	/* Never force-unload: keep the entry, the chain and the trampoline. */
 	return ret ? ret : DH_E_QUIESCE;
+}
+
+/**
+ * dh_hook_origin() - callable relocated-origin block for a hook
+ * @hook: installed hook
+ *
+ * Returns the backend-provided executable block holding the relocated first
+ * four instructions followed by the jump back to target+16, or NULL when the
+ * hook has none (no alloc_exec at install time, or @hook is not installed).
+ */
+void *dh_hook_origin(const struct dh_hook *hook)
+{
+	struct dh_trampoline *t;
+
+	if (!hook || !hook->installed || !hook->trampoline)
+		return NULL;
+	t = (struct dh_trampoline *)hook->trampoline;
+	if (t->magic != DH_TRAMP_MAGIC)
+		return NULL;
+	return t->exec_origin;
 }
 
 /**
@@ -567,6 +645,7 @@ int dh_hook_chain_run(struct dh_hook *hook, void *fargs,
 	struct dh_chain *c;
 	u32 i;
 	int ret, skip_val = 0;
+	int skipped = 0;
 
 	if (!hook || !hook->installed)
 		return DH_E_INVAL;
@@ -578,10 +657,14 @@ int dh_hook_chain_run(struct dh_hook *hook, void *fargs,
 		if (!c->items[i].before)
 			continue;
 		ret = c->items[i].before(fargs);
-		if (ret)
+		/* Every before still runs in registration order; the first
+		 * non-zero result is the skip value that wins. */
+		if (ret && !skipped) {
 			skip_val = ret;
+			skipped = 1;
+		}
 	}
-	if (skip_val)
+	if (skipped)
 		ret = skip_val;
 	else
 		ret = origin ? origin(fargs) : DH_OK;
@@ -641,10 +724,12 @@ size_t dh_hook_test_relo_len(struct dh_hook *hook)
 u32 dh_hook_test_relo_word(struct dh_hook *hook, size_t idx)
 {
 	struct dh_trampoline *t = (struct dh_trampoline *)hook->trampoline;
+	const u32 *relo;
 
 	if (!t || t->magic != DH_TRAMP_MAGIC || idx >= DH_RELO_INSNS)
 		return 0;
-	return t->relo[idx];
+	relo = t->exec_origin ? (const u32 *)t->exec_origin : t->relo;
+	return relo[idx];
 }
 
 u32 dh_hook_test_jump_word(struct dh_hook *hook, size_t idx)

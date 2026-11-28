@@ -34,7 +34,7 @@ typedef uint64_t u64;
  * Bumped whenever struct dh_backend, struct dh_ctx or a public signature
  * changes.  dh_ctx_init() rejects a backend whose abi does not match.
  */
-#define DH_ABI 1
+#define DH_ABI 2
 /**
  * define DH_KEY_LEN - maximum hook key including the NUL
  *
@@ -119,10 +119,15 @@ struct dh_rw_req {
  * struct dh_backend - runtime-provided primitives
  *
  * The runtime fills this once and hands it to dh_ctx_init().  Every function
- * pointer is mandatory except @alloc/@free, which may be NULL when the
- * library only uses caller-supplied buffers.  @text_write must sleep-safe
+ * pointer is mandatory except @alloc/@free and @alloc_exec/@free_exec, which
+ * may be NULL when the library only uses caller-supplied buffers or when no
+ * executable call-through block is needed.  @text_write must sleep-safe
  * (stop_machine + fixmap); @rw must be callable from lock-held context for
  * the data path.
+ *
+ * @alloc_exec must return memory the library may write and the CPU may
+ * execute; @free_exec releases memory previously returned by @alloc_exec.
+ * The library uses it for the relocated-origin call-through block.
  */
 struct dh_backend {
 	int (*rw)(struct dh_rw_req *req);
@@ -140,6 +145,8 @@ struct dh_backend {
 	void (*quiesce_end)(void);
 	const char *name;
 	u16 abi;
+	void *(*alloc_exec)(size_t size);
+	void (*free_exec)(const void *p);
 };
 
 /**
@@ -193,9 +200,12 @@ struct dh_ctx {
 /**
  * struct dh_hook - one installed function-level hook
  *
- * @trampoline points at the relo buffer (original instructions relocated
- * plus a jump back to original+4-insn).  @chain is the before/after callback
- * list, before in registration order, after in reverse.
+ * @target is the hooked function entry.  The entry now jumps to @replacement.
+ * @trampoline points at the library's internal trampoline record (original
+ * instructions, jump stub, relocated block); when the backend provides
+ * alloc_exec, the callable relocated-origin block lives in separate executable
+ * memory and is reachable only through dh_hook_origin().  @chain is the
+ * before/after callback list, before in registration order, after in reverse.
  */
 struct dh_hook {
 	char key[DH_KEY_LEN];
@@ -303,6 +313,18 @@ int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
 int dh_hook_uninstall(struct dh_ctx *ctx, struct dh_hook *hook);
 int dh_hook_wrap(struct dh_ctx *ctx, struct dh_hook *hook,
 		 int (*before)(void *fargs), int (*after)(void *fargs));
+
+/**
+ * dh_hook_origin() - callable relocated-origin block for a hook
+ * @hook: installed hook
+ *
+ * Returns a pointer to the callable block that runs the original first four
+ * instructions and then jumps back to target+16, or NULL when the hook has
+ * no executable origin block (backend supplied no alloc_exec).  A replacement
+ * installed through dh_hook_install() must have the target's exact prototype
+ * and call this pointer to continue the original logic.
+ */
+void *dh_hook_origin(const struct dh_hook *hook);
 
 /* ---- shadow / side table ---- */
 

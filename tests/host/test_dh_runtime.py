@@ -204,7 +204,7 @@ class DhRuntimeTest(unittest.TestCase):
         d = run('init')
         self.assertEqual(d['INIT'], '0')
         self.assertEqual(d['BACKEND'].split()[0], 'name=dnsk_core_rw5')
-        self.assertIn('abi=1', d['BACKEND'])
+        self.assertIn('abi=2', d['BACKEND'])
         for field in ('rw=', 'text=', 'ro=', 'probe=', 'pp='):
             self.assertNotIn(f'{field}(nil)', d['BACKEND'])
         # PAGE defaults to DNSK_RW_MAX and CHUNK_MAX is that same frozen core
