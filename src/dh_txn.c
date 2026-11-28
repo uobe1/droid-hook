@@ -115,7 +115,9 @@ int dh_txn_record(struct dh_ctx *ctx, void *addr, size_t len,
  * dh.h records only the original bytes and the route.  It has no field for
  * "which primitive made the change", so replay always goes through ro_write
  * with the recorded route; for the four RO paths that reaches the same
- * physical target.  This is reported to the lead as a contract gap.
+ * physical target.  This requirement is part of the public struct dh_backend
+ * contract: a backend that can install inline hooks must be able to restore
+ * executable text through ro_write at the recorded route.
  */
 int dh_txn_rollback_locked(struct dh_ctx *ctx)
 {

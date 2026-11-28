@@ -52,6 +52,10 @@ static int g_text_write_partial;
 static int g_text_write_quiesce;
 static int g_txn_rollback_ret;
 static int g_txn_begin_fail;
+/* Set by harness_install_origin() around the call so h_text_write() can prove
+ * the origin slot was already populated when the entry jump was written. */
+static void **g_origin_slot;
+static int g_origin_nonnull_at_write;
 static int g_arbitrate_reject;
 
 /* Optional executable allocator.  Off by default so the pre-existing layout
@@ -254,6 +258,8 @@ static int h_text_write(void *addr, const void *src, size_t len,
 	(void)route;
 	if (!addr || !src || len == 0)
 		return DH_E_INVAL;
+	g_origin_nonnull_at_write =
+		(g_origin_slot && *g_origin_slot) ? 1 : 0;
 	g_text_write_quiesce = g_quiesce_depth;
 	if (g_text_write_fail)
 		return DH_E_QUIESCE;
@@ -430,6 +436,8 @@ void harness_reset(int reject)
 	g_text_write_quiesce = 0;
 	g_txn_rollback_ret = 0;
 	g_txn_begin_fail = 0;
+	g_origin_slot = NULL;
+	g_origin_nonnull_at_write = 0;
 	g_arbitrate_reject = reject;
 	g_arbitrate_last_addr = NULL;
 	memset(g_arbitrate_last_key, 0, sizeof(g_arbitrate_last_key));
@@ -489,6 +497,22 @@ struct hook_result harness_install_at(const char *key, void *target,
 
 	memset(&r, 0, sizeof(r));
 	r.ret = dh_hook_install(harness_ctx(), key, target, replacement, &r.hook);
+	return r;
+}
+
+/* Install through the explicit-origin entry.  The slot pointer is exposed to
+ * h_text_write() for the duration of the call so the test can prove the origin
+ * was handed over before the entry became live. */
+struct hook_result harness_install_origin(const char *key, void *replacement,
+					  void **origin_out)
+{
+	struct hook_result r;
+
+	memset(&r, 0, sizeof(r));
+	g_origin_slot = origin_out;
+	r.ret = dh_hook_install_origin(harness_ctx(), key, (void *)g_text,
+				       replacement, &r.hook, origin_out);
+	g_origin_slot = NULL;
 	return r;
 }
 
@@ -725,6 +749,11 @@ int harness_exec_free_quiesce(void)
 int harness_exec_free_text_writes(void)
 {
 	return g_exec_free_text_writes;
+}
+
+int harness_origin_nonnull_at_write(void)
+{
+	return g_origin_nonnull_at_write;
 }
 
 /* ---- layout / trace introspection ---- */

@@ -303,12 +303,13 @@ static void dh_reg_drop(const char *key, void *target)
 }
 
 /**
- * dh_hook_install() - install a function-level inline hook
+ * dh_hook_install_impl() - shared install body for the two public entries
  * @ctx: library context whose backend supplies text_write and rw
  * @key: stable unique name, shorter than DH_KEY_LEN
  * @target: first instruction of the function to hook
  * @replacement: replacement function reached by the entry jump
  * @out: filled on success with the installed hook description
+ * @origin_out: optional pre-publish origin handoff; see dh_hook_install_origin()
  *
  * Install order: validate, claim the registry slot, arbitrate the address
  * with the legacy core hook registry, snapshot the four displaced
@@ -320,8 +321,9 @@ static void dh_reg_drop(const char *key, void *target)
  * Return: %DH_OK, %DH_E_INVAL, %DH_E_BUSY, %DH_E_NOSPC, %DH_E_OPNOTSUPP,
  * or the error reported by the backend / transaction layer.
  */
-int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
-		    void *replacement, struct dh_hook *out)
+static int dh_hook_install_impl(struct dh_ctx *ctx, const char *key, void *target,
+				void *replacement, struct dh_hook *out,
+				void **origin_out)
 {
 	struct dh_trampoline *t;
 	struct dh_chain *c;
@@ -338,6 +340,15 @@ int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
 
 	if (!ctx || !ctx->be || !key || !target || !replacement || !out)
 		return DH_E_INVAL;
+	/* Every failure leaves the caller's slot NULL: clear it before any
+	 * rejection so no stale sentinel or freed pointer survives. */
+	if (origin_out)
+		*origin_out = NULL;
+	/* A caller that asks for the origin explicitly requires call-through;
+	 * refuse a backend that cannot provide executable memory before doing
+	 * any work, rather than installing a hook whose origin can never exist. */
+	if (origin_out && !ctx->be->alloc_exec)
+		return DH_E_OPNOTSUPP;
 	klen = strlen(key);
 	if (klen == 0 || klen >= DH_KEY_LEN)
 		return DH_E_INVAL;
@@ -420,6 +431,11 @@ int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
 			ctx->be->icache_flush(t->exec_origin,
 					      t->relo_len * sizeof(u32));
 	}
+	/* Hand out the callable origin before anything can make the entry live,
+	 * so a replacement reached the instant the jump lands never sees a NULL
+	 * origin slot.  origin_out implies alloc_exec, so the block exists. */
+	if (origin_out)
+		*origin_out = t->exec_origin;
 
 	ret = dh_txn_begin(ctx);
 	if (ret)
@@ -486,11 +502,58 @@ fail_txn:
 		goto fail_claim;
 	}
 fail_allocs:
+	/* Pre-publish failure: the exec block is about to be freed, so never
+	 * leave the caller with a pointer to it. */
+	if (origin_out)
+		*origin_out = NULL;
 	dh_chain_free(ctx, c);
 	dh_tramp_release(ctx, t);
 fail_claim:
 	dh_reg_drop(key, target);
 	return ret ? ret : DH_E_INVAL;
+}
+
+/**
+ * dh_hook_install() - install a function-level inline hook
+ * @ctx: library context whose backend supplies text_write and rw
+ * @key: stable unique name, shorter than DH_KEY_LEN
+ * @target: first instruction of the function to hook
+ * @replacement: replacement function reached by the entry jump
+ * @out: filled on success with the installed hook description
+ *
+ * No call-through handoff: works with or without alloc_exec.  When alloc_exec
+ * is present the origin block still exists and dh_hook_origin() returns it
+ * after install; when absent dh_hook_origin() returns NULL.
+ *
+ * Return: %DH_OK, %DH_E_INVAL, %DH_E_BUSY, %DH_E_NOSPC, %DH_E_OPNOTSUPP,
+ * or the error reported by the backend / transaction layer.
+ */
+int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
+		    void *replacement, struct dh_hook *out)
+{
+	return dh_hook_install_impl(ctx, key, target, replacement, out, NULL);
+}
+
+/**
+ * dh_hook_install_origin() - install a hook and hand out the origin pre-publish
+ * @ctx: library context
+ * @key: hook key
+ * @target: hooked function entry
+ * @replacement: replacement function (target's exact prototype)
+ * @out: filled on success
+ * @origin_out: receives the callable origin before the entry is published
+ *
+ * See the public documentation in dh.h.  A post-publish failure that keeps the
+ * leaked exec block alive leaves @*origin_out valid; every other failure
+ * clears it before returning.  The origin block has no kCFI type hash, so a
+ * call-through caller on a CFI kernel must suppress the check (dh.h contract).
+ */
+int dh_hook_install_origin(struct dh_ctx *ctx, const char *key, void *target,
+			   void *replacement, struct dh_hook *out,
+			   void **origin_out)
+{
+	return dh_hook_install_impl(ctx, key, target, replacement, out,
+				    origin_out);
 }
 
 /**
@@ -578,6 +641,8 @@ out_quiesce:
  * Returns the backend-provided executable block holding the relocated first
  * four instructions followed by the jump back to target+16, or NULL when the
  * hook has none (no alloc_exec at install time, or @hook is not installed).
+ * The block has no kCFI type hash, so it is not a valid indirect-call target on
+ * CFI kernels; see the dh.h contract (call __nocfi or suppress the check).
  */
 void *dh_hook_origin(const struct dh_hook *hook)
 {

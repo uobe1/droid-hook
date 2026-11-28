@@ -37,13 +37,13 @@ MODULE_PARM_DESC(selftest, "run the Droid-Hook self-test at load, refuse to load
 #ifdef DH_WITH_RUNTIME
 /*
  * require_core=1: resolve dnsk_core_get via symbol_get (no hard link
- * dependency), require the core API to be ABI 5, and run a real rw check
+ * dependency), require the core API to be ABI 2, and run a real rw check
  * against it.  Holding the API keeps a module reference on dnsk_core until
  * this module unloads; module_exit releases it.
  */
 static int require_core;
 module_param(require_core, int, 0444);
-MODULE_PARM_DESC(require_core, "require dnsk_core ABI 5 and run a real rw self-test");
+MODULE_PARM_DESC(require_core, "require dnsk_core ABI 2 and run a real rw self-test");
 
 static int hooktest;
 module_param(hooktest, int, 0444);
@@ -179,7 +179,7 @@ static struct dh_backend dh_st_be = {
  * ---- runtime split-path self-test --------------------------------------
  *
  * The QEMU gate loads this module with selftest=1, so this is the only place
- * where the core ABI 5 adapter (runtime/dh_core_backend.c) is executed in a
+ * where the core ABI 2 adapter (runtime/dh_core_backend.c) is executed in a
  * real kernel.  A mock dnsk_core_api stands in for the suite's core: it owns a
  * page-aligned buffer, rejects any request over 256 bytes or crossing a page,
  * records the chunk sizes, and can fail the Nth write on purpose.
@@ -305,7 +305,7 @@ static int dh_run_runtime_selftest(void)
 
 	/*
 	 * The raw adapter supplies no icache_flush/tlb_flush/quiesce primitives
-	 * (ABI 5 has none), but dh_ctx_init()/dh_ctx_fini()/dh_txn_rollback()
+	 * (ABI 2 has none), but dh_ctx_init()/dh_ctx_fini()/dh_txn_rollback()
 	 * require all four to be present.  The library tests below therefore
 	 * wrap the adapter's memory primitives in a backend whose cache and
 	 * quiesce hooks are no-ops; rw/text_write/ro_write/patch_pointer/probe
@@ -427,7 +427,7 @@ static int dh_run_runtime_selftest(void)
 	return 0;
 }
 
-/* ---- real dnsk_core ABI 5 routing (require_core=1) --------------------- */
+/* ---- real dnsk_core ABI 2 routing (require_core=1) --------------------- */
 
 static int dh_core_bound;
 static struct dnsk_core_api *dh_core_api;

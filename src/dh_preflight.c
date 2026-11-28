@@ -22,7 +22,7 @@
  * probe therefore never fakes a result: read failure, write failure and
  * verification failure are each propagated unchanged.
  *
- * Only DH_ROUTE_FIXMAP is probed because the core RW ABI 5 adapter implements
+ * Only DH_ROUTE_FIXMAP is probed because the core RW ABI 2 adapter implements
  * exactly that route today (F_RO -> patch_map); ALIAS/PTE/DMA are contract
  * placeholders in the adapter.  When the adapter distinguishes more routes this
  * probe should iterate them in preference order; until then, probing the one

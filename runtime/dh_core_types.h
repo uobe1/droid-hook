@@ -3,7 +3,7 @@
 #define _DROID_HOOK_RUNTIME_DH_CORE_TYPES_H
 
 /*
- * Core ABI 5 types are visible only inside runtime/.  The library contract
+ * Core ABI 2 types are visible only inside runtime/.  The library contract
  * (dh.h) and src/ must never include a core header.
  *
  * In a real kernel build we use the authoritative core/include/dnsk_core.h.
@@ -28,7 +28,7 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 
 #define DNSK_CORE_MAGIC 0x444E534BU
-#define DNSK_CORE_ABI 5
+#define DNSK_CORE_ABI 2
 
 #define DNSK_RW_F_LOCKED (1u << 0)
 #define DNSK_RW_F_TEXT   (1u << 1)
@@ -66,7 +66,7 @@ struct dnsk_rw_req {
 };
 
 struct module;
-struct dnsk_hook_req;
+struct dnsk_inline_hook_req;
 struct dnsk_feature_desc;
 
 struct dnsk_core_api {
@@ -74,8 +74,8 @@ struct dnsk_core_api {
 	u16 abi;
 	u16 size;
 	void *(*resolve)(const char *name);
-	int (*hook_add)(const struct dnsk_hook_req *req);
-	int (*hook_del)(const char *key);
+	int (*hook_install)(const struct dnsk_inline_hook_req *req);
+	int (*hook_uninstall)(const char *key);
 	int (*feature_add)(const struct dnsk_feature_desc *desc);
 	int (*feature_del)(const char *name);
 	void (*log)(int level, const char *fmt, ...);
@@ -93,7 +93,7 @@ _Static_assert(offsetof(struct dnsk_rw_req, lock) == 32, "dnsk_rw_req.lock moved
 _Static_assert(offsetof(struct dnsk_rw_req, len) == 40, "dnsk_rw_req.len moved");
 _Static_assert(offsetof(struct dnsk_rw_req, ret) == 64, "dnsk_rw_req.ret moved");
 _Static_assert(sizeof(struct dnsk_core_api) == 80, "dnsk_core_api size changed");
-_Static_assert(offsetof(struct dnsk_core_api, hook_add) == 16, "dnsk_core_api.hook_add moved");
+_Static_assert(offsetof(struct dnsk_core_api, hook_install) == 16, "dnsk_core_api.hook_install moved");
 _Static_assert(offsetof(struct dnsk_core_api, rw) == 64, "dnsk_core_api.rw moved");
 _Static_assert(offsetof(struct dnsk_core_api, owner) == 72, "dnsk_core_api.owner moved");
 #endif

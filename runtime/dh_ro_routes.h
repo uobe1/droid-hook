@@ -8,7 +8,7 @@
  * Write to a read-only target over one concrete route.
  *
  * ALIAS and PTE are real implementations in the kernel build.  FIXMAP is not
- * handled here: the core ABI 5 adapter still delegates it to dnsk_core's
+ * handled here: the core ABI 2 adapter still delegates it to dnsk_core's
  * patch backend.  DMA is fail-closed (DH_E_OPNOTSUPP) because a normal LKM
  * has no EL2/Stage-2 control and no guaranteed DMA engine; returning an error
  * is honest, while pretending DMA succeeded would not be.

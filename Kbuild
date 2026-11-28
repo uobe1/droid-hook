@@ -6,7 +6,7 @@
 #
 # The module is the library plus packaging: src/ (kernel-agnostic library) and
 # dh_module.c (module_init/exit, exports, self-test).  runtime/ is the optional
-# core RW ABI 5 adapter: it needs the droid-lkm-suite core headers, so it is
+# core RW ABI 2 adapter: it needs the droid-lkm-suite core headers, so it is
 # compiled in only when DNSK_CORE_INC points at a directory containing
 # dnsk_core.h.  Without it the module still builds as library + packaging.
 #

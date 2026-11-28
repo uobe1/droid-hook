@@ -7,7 +7,7 @@
  * no allocation, no global state and no libc/kernel-only helpers, so the same
  * source compiles both as part of an LKM and as a host selftest.
  *
- * Chunking mirrors the core ABI 5 contract: one request carries at most 256
+ * Chunking mirrors the core ABI 2 contract: one request carries at most 256
  * bytes and must not cross a page boundary.  4096 is the conservative chunk
  * boundary because it is <= both the 4K and 16K GKI page sizes.
  */
@@ -15,7 +15,7 @@
 #include "dh.h"
 
 /*
- * Opcode numbers mirror the core ABI 5 single-entry rw() contract.  dh.h
+ * Opcode numbers mirror the core ABI 2 single-entry rw() contract.  dh.h
  * deliberately does not publish opcode/flag/lock_type constants, so the
  * runtime and this library must agree on these numeric values out of band.
  * This is reported to the lead as a contract gap; do not renumber here.

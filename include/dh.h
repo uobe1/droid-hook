@@ -8,7 +8,7 @@
  * Droid-Hook is a library that can be embedded into an LKM or any other
  * kernel module.  It owns no global state: every entry point takes a
  * struct dh_ctx whose ->be points at the runtime's backend.  The runtime
- * (by default dnsk_core.ko's rw/patch_pointer single-entry ABI 5) supplies
+ * (by default dnsk_core.ko's rw/patch_pointer single-entry ABI 2) supplies
  * the backend; swapping the runtime means supplying a different backend,
  * with zero changes to the library.
  *
@@ -128,6 +128,11 @@ struct dh_rw_req {
  * @alloc_exec must return memory the library may write and the CPU may
  * execute; @free_exec releases memory previously returned by @alloc_exec.
  * The library uses it for the relocated-origin call-through block.
+ *
+ * Transaction rollback replays each recorded range through @ro_write with the
+ * recorded route, so any backend that installs inline hooks must make
+ * @ro_write able to restore executable text at that route, including the
+ * instruction-cache flush.
  */
 struct dh_backend {
 	int (*rw)(struct dh_rw_req *req);
@@ -204,8 +209,12 @@ struct dh_ctx {
  * @trampoline points at the library's internal trampoline record (original
  * instructions, jump stub, relocated block); when the backend provides
  * alloc_exec, the callable relocated-origin block lives in separate executable
- * memory and is reachable only through dh_hook_origin().  @chain is the
- * before/after callback list, before in registration order, after in reverse.
+ * memory and is reachable only through dh_hook_origin().  That block is raw
+ * relocated code with no kCFI type hash before its entry, so it is not a valid
+ * kCFI indirect-call target: on CFI kernels (Android has CONFIG_CFI_CLANG=y) a
+ * checked indirect call to it fails, and the caller must suppress the check on
+ * that call (kernel __nocfi).  @chain is the before/after callback list, before
+ * in registration order, after in reverse.
  */
 struct dh_hook {
 	char key[DH_KEY_LEN];
@@ -310,6 +319,34 @@ int dh_patch_text_batch(struct dh_ctx *ctx, void **addrs, u32 **insns,
 
 int dh_hook_install(struct dh_ctx *ctx, const char *key, void *target,
 		    void *replacement, struct dh_hook *out);
+/**
+ * dh_hook_install_origin() - install a hook and hand out the origin pre-publish
+ * @ctx: library context
+ * @key: hook key
+ * @target: hooked function entry
+ * @replacement: replacement function (target's exact prototype)
+ * @out: filled on success
+ * @origin_out: on success, receives the callable origin pointer *before* the
+ *              entry is published, so a replacement that becomes reachable at
+ *              once never observes a NULL origin slot
+ *
+ * When @origin_out is non-NULL the caller explicitly requires call-through, so
+ * a backend without alloc_exec fails early with %DH_E_OPNOTSUPP and no text is
+ * touched.  With alloc_exec the origin is stored in @*origin_out after the exec
+ * block is populated and before the entry jump is written; a pre-publish
+ * failure clears @*origin_out.  A post-publish failure with successful rollback
+ * deliberately leaks the exec block, so @*origin_out keeps pointing at live
+ * memory (never dangling) for an in-flight replacement.  When @origin_out is
+ * NULL this is equivalent to dh_hook_install().
+ *
+ * The origin this returns is raw relocated code with no kCFI type hash before
+ * its entry, so it is not a valid kCFI indirect-call target; on CFI kernels a
+ * checked indirect call to it fails, and the replacement must be built without
+ * the check on that call (kernel __nocfi).
+ */
+int dh_hook_install_origin(struct dh_ctx *ctx, const char *key, void *target,
+			   void *replacement, struct dh_hook *out,
+			   void **origin_out);
 int dh_hook_uninstall(struct dh_ctx *ctx, struct dh_hook *hook);
 int dh_hook_wrap(struct dh_ctx *ctx, struct dh_hook *hook,
 		 int (*before)(void *fargs), int (*after)(void *fargs));
@@ -323,6 +360,11 @@ int dh_hook_wrap(struct dh_ctx *ctx, struct dh_hook *hook,
  * no executable origin block (backend supplied no alloc_exec).  A replacement
  * installed through dh_hook_install() must have the target's exact prototype
  * and call this pointer to continue the original logic.
+ *
+ * The returned block has no kCFI type hash before its entry, so it is not a
+ * valid kCFI indirect-call target; on CFI kernels a checked indirect call to it
+ * fails, and the caller must suppress the check on that call (kernel __nocfi).
+ * The entry jump itself is a direct BR and is unaffected.
  */
 void *dh_hook_origin(const struct dh_hook *hook);
 

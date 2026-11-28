@@ -3,7 +3,7 @@
 #define _DROID_HOOK_RUNTIME_DH_CORE_BACKEND_H
 
 /*
- * Runtime adapter: maps the core RW ABI 5 single entry (rw + patch_pointer +
+ * Runtime adapter: maps the core RW ABI 2 single entry (rw + patch_pointer +
  * resolve) onto struct dh_backend used by the Droid-Hook library.
  *
  * This header is owned by runtime/.  It is the only place that mentions core
@@ -29,7 +29,7 @@ struct dh_core_state {
 };
 
 /**
- * dh_core_backend_init() - bind a dh_backend to a core ABI 5 API table
+ * dh_core_backend_init() - bind a dh_backend to a core ABI 2 API table
  * @be: backend to fill, zeroed by the caller before the call
  * @st: caller-owned state, must outlive @be
  * @api: core API table, validated for magic/ABI/mandatory primitives

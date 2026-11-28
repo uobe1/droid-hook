@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * Host harness for the core RW ABI 5 -> dh_backend adapter.
+ * Host harness for the core RW ABI 2 -> dh_backend adapter.
  *
  * Provides a mock struct dnsk_core_api (dh_core_types.h supplies the same
  * declarations in a host build, so no kernel header is needed).  The mock

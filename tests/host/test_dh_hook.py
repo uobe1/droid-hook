@@ -137,6 +137,11 @@ class DhHookTest(unittest.TestCase):
         lib.harness_origin.restype = ctypes.c_void_p
         lib.harness_exec_free_quiesce.restype = ctypes.c_int
         lib.harness_exec_free_text_writes.restype = ctypes.c_int
+        lib.harness_origin_nonnull_at_write.restype = ctypes.c_int
+        lib.harness_install_origin.argtypes = [ctypes.c_char_p,
+                                              ctypes.c_void_p,
+                                              ctypes.POINTER(ctypes.c_void_p)]
+        lib.harness_install_origin.restype = HookResult
         lib.harness_install_at.argtypes = [ctypes.c_char_p, ctypes.c_void_p,
                                            ctypes.c_void_p]
         lib.harness_install_at.restype = HookResult
@@ -518,6 +523,48 @@ class DhHookTest(unittest.TestCase):
                          'quiesce still balanced on the error path')
 
     # ---- executable origin (call-through) ----
+
+    def test_install_origin_handed_over_before_publish(self):
+        """The origin slot must already hold the exec block when the entry
+        jump is written, so a replacement reached immediately never sees NULL."""
+        self.lib.harness_set_exec_alloc(1)
+        slot = ctypes.c_void_p(0)
+        r = self.lib.harness_install_origin(b'origin', ctypes.c_void_p(0xDEADBEEF),
+                                            ctypes.byref(slot))
+        self.assertEqual(r.ret, DH_OK)
+        h = ctypes.pointer(r.hook)
+        self.assertEqual(self.lib.harness_origin_nonnull_at_write(), 1,
+                         'origin must be set before the entry write')
+        self.assertIsNotNone(slot.value, 'origin_out must receive a pointer')
+        self.assertEqual(slot.value, self.lib.harness_origin(h),
+                         'handed-out origin must equal the hook origin')
+        self.assertEqual(self.lib.harness_uninstall(h), DH_OK)
+
+    def test_install_origin_without_exec_alloc_rejected(self):
+        """Explicit call-through on a backend with no alloc_exec must fail
+        early with DH_E_OPNOTSUPP and touch no text."""
+        slot = ctypes.c_void_p(0xFEEDFACE)
+        r = self.lib.harness_install_origin(b'noexec', ctypes.c_void_p(0xDEADBEEF),
+                                            ctypes.byref(slot))
+        self.assertEqual(r.ret, DH_E_OPNOTSUPP)
+        self.assertIsNone(slot.value,
+                          'rejection must clear a pre-set sentinel slot')
+        self.assertEqual(self.lib.harness_text_writes(), 0,
+                         'rejection must precede any text write')
+        self.assertEqual(self.lib.harness_registry_count(), 0)
+
+    def test_pre_publish_failure_clears_origin_slot(self):
+        """A failure before publish frees the exec block, so the slot must be
+        cleared rather than left dangling."""
+        self.lib.harness_set_exec_alloc(1)
+        self.lib.harness_fail_txn_begin(1)
+        slot = ctypes.c_void_p(0)
+        r = self.lib.harness_install_origin(b'prepub', ctypes.c_void_p(0xDEADBEEF),
+                                            ctypes.byref(slot))
+        self.assertEqual(r.ret, DH_E_BUSY)
+        self.assertIsNone(slot.value, 'pre-publish failure must clear the slot')
+        self.assertEqual(self.lib.harness_exec_free_calls(), 1,
+                         'the freed block must not be reachable from the slot')
 
     def test_origin_is_null_without_exec_alloc(self):
         """No alloc_exec means the relo block is plain data, so no callable

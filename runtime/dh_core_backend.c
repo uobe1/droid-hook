@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Droid-Hook runtime backend for the core RW ABI 5 single entry.
+ * Droid-Hook runtime backend for the core RW ABI 2 single entry.
  *
  * The core exposes exactly one memory primitive: rw(struct dnsk_rw_req *),
  * plus patch_pointer() and resolve().  This file adapts those three onto the
@@ -37,7 +37,7 @@
 #endif
 
 /*
- * The core's per-request cap.  The public core ABI 5 header documents
+ * The core's per-request cap.  The public core ABI 2 header documents
  * struct dnsk_rw_req @len as "at most 256 and within one page"
  * (droid-lkm-suite:core/include/dnsk_core.h:291) and enforces it in the
  * implementation (droid-lkm-suite:core/dnsk_rw.c:69), but it does not export
@@ -72,7 +72,7 @@ _Static_assert(DNSK_RW_WRITE == 2, "core WRITE value changed");
 _Static_assert(DNSK_RW_XCHG == 3, "core XCHG value changed");
 _Static_assert(DNSK_RW_CAS == 4, "core CAS value changed");
 _Static_assert(DNSK_RW_PROBE == 5, "core PROBE value changed");
-_Static_assert(DNSK_CORE_ABI == 5, "core ABI changed; adapter needs review");
+_Static_assert(DNSK_CORE_ABI == 2, "core ABI changed; adapter needs review");
 _Static_assert(DNSK_CORE_MAGIC == 0x444E534BU, "core MAGIC changed");
 
 struct dh_core_binding {
@@ -184,7 +184,7 @@ static int plan_chunks(const void *addr, size_t len, size_t page_size,
 
 /* Best-effort reverse recovery of chunks already written when a later chunk
  * fails.  Originals are read before the write (one READ per chunk).  Full
- * atomicity is the library dh_txn layer's job; core ABI 5 has no transaction
+ * atomicity is the library dh_txn layer's job; core ABI 2 has no transaction
  * primitive, so we never claim a failed multi-chunk write left no trace - we
  * restore what we can and return the error. */
 static int save_originals(struct dh_core_state *st, void *addr,
@@ -522,7 +522,7 @@ int dh_core_backend_init(struct dh_backend *be, struct dh_core_state *st,
 	be->ro_write = ops->ro_write;
 	be->probe = ops->probe;
 	/* dh.h requires every primitive except alloc/free and the optional
-	 * alloc_exec/free_exec pair.  ABI 5 has no icache/tlb/quiesce or
+	 * alloc_exec/free_exec pair.  ABI 2 has no icache/tlb/quiesce or
 	 * executable-allocator primitive, so these stay NULL and dh_ctx_init()
 	 * rejects this backend with DH_E_INVAL until the embedder wraps it
 	 * with those callbacks. */
