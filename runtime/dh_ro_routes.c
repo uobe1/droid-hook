@@ -105,6 +105,10 @@ static int dh_ro_pte_write(void *addr, const void *src, size_t len)
 	if (ret != 0)
 		return ret;
 	memcpy(addr, src, len);
+	/* Flush before attempting to restore the permission: if set_memory_ro()
+	 * fails, the page stays writable (the error propagates), but the
+	 * instruction stream must not keep executing stale bytes. */
+	flush_icache_range((unsigned long)addr, (unsigned long)addr + len);
 	ret = dh_ro_set_ro(start, npages);
 	return ret != 0 ? ret : DH_OK;
 }

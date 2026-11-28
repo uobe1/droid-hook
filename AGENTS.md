@@ -2,9 +2,9 @@
 
 The shared rules are canonical in
 `~/.claude/projects/-root-droid-kernel/memory/MEMORY.md` (`~/.memory/` and the
-qoder copy are symlinks to it); the workspace state is
-`/root/droid-kernel/docs/STATUS.md`
-You must read them before any work
+qoder copy are symlinks to it). The workspace has no shared `docs/` tree; the
+suite's state is in `droid-lkm-suite/docs/status.md` and this repo's state is in
+`README.md`. You must read them before any work.
 
 <!-- Tag by Zgod, Project manual memory -->
 
@@ -51,7 +51,7 @@ marker 命名建议 `DH_*_INTERCEPT_OK` / `DH_*_RESTORED`，缺一即未完成�
 |---|---|
 | 行为 / 默认值 / 参数 | `README.md` 对应段落 |
 | 新增或删除文件、API | `README.md` §分层 / 已实现；`include/dh.h` 注释 |
-| 门控结果 | `docs/evidence/<gate>-<date>.md`（run id、headSha、marker 原文） |
+| 门控结果 | `docs/evidence/<gate>-<date>.md`（本地资料，gitignored；run id、headSha、marker 原文） |
 
 `README.md` 必须始终同时有「已验证」和「未验证」两节；未验证项不许写成完成。
 
@@ -71,5 +71,5 @@ marker 命名建议 `DH_*_INTERCEPT_OK` / `DH_*_RESTORED`，缺一即未完成�
 
 ## 读源码要落地
 
-读到内核/上游源码并据此做判断时，先把结论写进 `docs/evidence/` 或 `docs/notes/`：
+读到内核/上游源码并据此做判断时，先把结论写进 `docs/notes/`：
 **语义 + `文件:行号` + 为什么这样决定**。只留在对话里等于没做——下一个人得重读同样的代码。

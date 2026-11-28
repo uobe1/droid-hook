@@ -521,9 +521,10 @@ int dh_core_backend_init(struct dh_backend *be, struct dh_core_state *st,
 	be->text_write = ops->text_write;
 	be->ro_write = ops->ro_write;
 	be->probe = ops->probe;
-	/* alloc/free/icache_flush/tlb_flush/quiesce_* are optional in dh.h and
-	 * deliberately NULL: ABI 5 has no such primitives, so the library must
-	 * use caller-owned buffers with this backend. */
+	/* dh.h requires every primitive except alloc/free.  ABI 5 has no
+	 * icache/tlb/quiesce primitive, so these stay NULL and dh_ctx_init()
+	 * rejects this backend with DH_E_INVAL until the embedder wraps it
+	 * with those callbacks. */
 	be->name = DH_CORE_BACKEND_NAME;
 	be->abi = DH_ABI;
 	return DH_OK;

@@ -35,7 +35,7 @@ int dh_shadow_test_live(void);
 
 /* ---- fake text / backend state ---- */
 
-#define FAKE_INSNS		8
+#define FAKE_INSNS		72
 static u32 g_text[FAKE_INSNS];
 static int g_text_writes;
 static int g_quiesce_depth;
@@ -45,6 +45,10 @@ static int g_txn_begin_calls;
 static int g_txn_commit_calls;
 static int g_txn_rollback_calls;
 static int g_text_write_fail;
+static int g_text_write_lie;
+static int g_text_write_partial;
+static int g_text_write_quiesce;
+static int g_txn_rollback_ret;
 static int g_arbitrate_reject;
 
 static void *g_arbitrate_last_addr;
@@ -173,6 +177,15 @@ int dh_txn_rollback(struct dh_ctx *ctx)
 	if (!ctx)
 		return DH_E_INVAL;
 	g_txn_rollback_calls++;
+	if (g_txn_rollback_ret != DH_OK) {
+		/* Model a rollback that cannot restore: leave the text as the
+		 * failed write left it, so the caller can observe that freeing
+		 * the trampoline now would be a use-after-free. */
+		ctx->txn.active = 0;
+		ctx->txn.n = 0;
+		ctx->txn.failed = 1;
+		return g_txn_rollback_ret;
+	}
 	for (i = ctx->txn.n; i > 0; i--) {
 		struct dh_undo_ent *e = &ctx->txn.undo[i - 1];
 
@@ -224,8 +237,25 @@ static int h_text_write(void *addr, const void *src, size_t len,
 	(void)route;
 	if (!addr || !src || len == 0)
 		return DH_E_INVAL;
+	g_text_write_quiesce = g_quiesce_depth;
 	if (g_text_write_fail)
 		return DH_E_QUIESCE;
+	if (g_text_write_lie) {
+		/* Report success without touching the text, to exercise the
+		 * install/uninstall read-back verification. */
+		g_text_writes++;
+		return DH_OK;
+	}
+	if (g_text_write_partial) {
+		/* Apply only the first half, then fail: the entry now contains a
+		 * partial stub.  If rollback then fails, the text still points at
+		 * the trampoline and must not be freed. */
+		size_t half = len > 1 ? len / 2 : 1;
+
+		memcpy(addr, src, half);
+		g_text_writes++;
+		return DH_E_QUIESCE;
+	}
 	memcpy(addr, src, len);
 	g_text_writes++;
 	return DH_OK;
@@ -347,6 +377,10 @@ void harness_reset(int reject)
 	g_txn_commit_calls = 0;
 	g_txn_rollback_calls = 0;
 	g_text_write_fail = 0;
+	g_text_write_lie = 0;
+	g_text_write_partial = 0;
+	g_text_write_quiesce = 0;
+	g_txn_rollback_ret = 0;
 	g_arbitrate_reject = reject;
 	g_arbitrate_last_addr = NULL;
 	memset(g_arbitrate_last_key, 0, sizeof(g_arbitrate_last_key));
@@ -384,6 +418,18 @@ struct hook_result harness_install(const char *key, void *replacement)
 	memset(&r, 0, sizeof(r));
 	r.ret = dh_hook_install(harness_ctx(), key, (void *)g_text,
 				replacement, &r.hook);
+	return r;
+}
+
+/* Same as harness_install() but with a caller-chosen target, so a test can
+ * fill the fixed-size registry and observe the failure path. */
+struct hook_result harness_install_at(const char *key, void *target,
+				      void *replacement)
+{
+	struct hook_result r;
+
+	memset(&r, 0, sizeof(r));
+	r.ret = dh_hook_install(harness_ctx(), key, target, replacement, &r.hook);
 	return r;
 }
 
@@ -552,6 +598,26 @@ int harness_txn_rollbacks(void)
 void harness_fail_text_write(int on)
 {
 	g_text_write_fail = on;
+}
+
+void harness_lie_text_write(int on)
+{
+	g_text_write_lie = on;
+}
+
+void harness_partial_text_write(int on)
+{
+	g_text_write_partial = on;
+}
+
+void harness_fail_txn_rollback(int ret)
+{
+	g_txn_rollback_ret = ret;
+}
+
+int harness_text_write_quiesce(void)
+{
+	return g_text_write_quiesce;
 }
 
 /* ---- layout / trace introspection ---- */

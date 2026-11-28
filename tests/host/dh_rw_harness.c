@@ -32,6 +32,11 @@ static unsigned long h_ro_write_calls;
 static int h_corrupt_next_write;
 static int h_fail_rw_ret;
 static int h_fail_ro_write_ret;
+/* Fail the Nth rw() call after arming; 0 disables.  Lets a test fail the
+ * read-back inside dh_write() without failing the write that precedes it. */
+static int h_fail_rw_on_call;
+static int h_fail_rw_call_ret;
+static int h_rw_calls;
 static int h_scratch[256];
 
 static const char *h_sym_names[H_NR_SYMS] = {
@@ -62,6 +67,11 @@ static int h_rw(struct dh_rw_req *req)
 	unsigned long off;
 	size_t i;
 
+	if (h_fail_rw_on_call > 0) {
+		h_rw_calls++;
+		if (h_rw_calls == h_fail_rw_on_call)
+			return h_fail_rw_call_ret;
+	}
 	if (h_fail_rw_ret)
 		return h_fail_rw_ret;
 	if (!req || !req->addr || !req->len || req->len > H_MEM_SIZE)
@@ -238,6 +248,9 @@ void dh_harness_reset(void)
 	h_corrupt_next_write = 0;
 	h_fail_rw_ret = 0;
 	h_fail_ro_write_ret = 0;
+	h_fail_rw_on_call = 0;
+	h_fail_rw_call_ret = 0;
+	h_rw_calls = 0;
 	h_init_syms();
 }
 
@@ -284,6 +297,13 @@ void dh_harness_fail_rw(int ret)
 void dh_harness_fail_ro_write(int ret)
 {
 	h_fail_ro_write_ret = ret;
+}
+
+void dh_harness_fail_rw_on_call(int call, int ret)
+{
+	h_fail_rw_on_call = call;
+	h_fail_rw_call_ret = ret;
+	h_rw_calls = 0;
 }
 
 unsigned char dh_harness_read_byte(unsigned long off)

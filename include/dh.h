@@ -49,10 +49,11 @@ typedef uint64_t u64;
  */
 #define DH_UNDO_SLOTS 8
 /**
- * define DH_MAX_BATCH - maximum instructions in one text-patch batch
+ * define DH_MAX_BATCH - maximum sites in one text-patch batch
  *
- * One stop_machine window amortises the whole batch; larger sets must be
- * split into multiple transactions.
+ * One transaction amortises the whole batch.  Each site consumes one undo
+ * entry, so a single batch is also limited to DH_UNDO_SLOTS sites; larger sets
+ * must be split into multiple transactions.
  */
 #define DH_MAX_BATCH 64
 

@@ -197,13 +197,19 @@ int dh_write(struct dh_ctx *ctx, void *addr, const void *src, size_t len)
 		req.src = s;
 		req.len = chunk;
 		ret = ctx->be->rw(&req);
-		if (ret != DH_OK)
+		if (ret != DH_OK) {
+			if (ctx->txn.active)
+				ctx->txn.failed = 1;
 			return ret;
+		}
 
 		/* Read-back verification is mandatory, not best-effort. */
 		ret = dh_read(ctx, a, verify, chunk);
-		if (ret != DH_OK)
+		if (ret != DH_OK) {
+			if (ctx->txn.active)
+				ctx->txn.failed = 1;
 			return ret;
+		}
 		if (!dh_bytes_equal(verify, s, chunk)) {
 			if (ctx->txn.active)
 				ctx->txn.failed = 1;

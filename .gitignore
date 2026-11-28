@@ -12,3 +12,7 @@ Module.symvers
 modules.order
 .*.cmd
 .tmp_versions/
+
+# Local material: gate evidence and notes; not shipped
+docs/evidence/
+docs/notes/

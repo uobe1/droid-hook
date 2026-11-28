@@ -24,6 +24,29 @@ jobs:
       - uses: actions/checkout@v4
       - name: Host suites
         run: make check
+      - name: Install static-analysis tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck cppcheck
+          python3 -m pip install --user --break-system-packages ruff yamllint 'clang-format==18.1.8'
+          go install github.com/rhysd/actionlint/cmd/actionlint@latest
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: shellcheck
+        run: shellcheck tests/qemu/init-droid-hook
+      - name: ruff
+        run: ruff check tests/host
+      - name: clang-format
+        run: git ls-files -z '*.c' '*.h' | xargs -0 -r clang-format --dry-run --Werror
+      - name: yamllint
+        run: yamllint .github/workflows
+      - name: actionlint
+        run: actionlint
+      - name: cppcheck (host-compilable C)
+        run: |
+          cppcheck --enable=warning,performance,portability --error-exitcode=1 \
+            --std=c11 --suppress=missingIncludeSystem -Iinclude -Iruntime \
+            src/*.c tests/host/*.c
 
   # Real kernel module build.  This is what proves droid_hook.ko compiles
   # against the android16-6.12 GKI kernel the device runs.

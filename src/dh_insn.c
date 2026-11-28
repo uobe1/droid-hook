@@ -4,8 +4,9 @@
  *
  * This translation unit is host-compilable (no kernel headers) so the encoder
  * can be verified against real assembler output in tests/host/.  It never
- * includes a core header; the only cross-TU dependency is dh_txn_rollback(),
- * declared extern and supplied by the dh-rw-dev translation unit (or a stub in
+ * includes a core header.  The cross-TU dependencies are the transaction entry
+ * points (dh_txn_begin/record/commit/rollback) and dh_read, all declared in
+ * dh.h and supplied by the transaction/RW translation units (or by stubs in
  * the host harness).
  *
  * Encoding facts were checked against clang --target=aarch64-linux-gnu and
@@ -20,9 +21,11 @@
  * source compiling as a module and as a host TU. */
 #ifdef __KERNEL__
 #include <linux/compiler.h>
+#include <linux/string.h>
 #else
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 /* READ_ONCE is a kernel macro; the host needs the same "one volatile read"
  * semantics without pulling kernel headers. */
 #define READ_ONCE(x) (*(const volatile __typeof__(x) *)&(x))
@@ -35,7 +38,8 @@
 typedef int64_t s64;
 #endif
 
-/* Implemented by dh_rw.c (dh-rw-dev); stubbed in the host harness. */
+/* The batch is compiled here but the transaction itself lives in dh_txn.c and
+ * dh_read in dh_rw.c; both are stubbed in the host harness. */
 extern int dh_txn_rollback(struct dh_ctx *ctx);
 
 /* ------------------------------------------------------------------------- */
@@ -68,7 +72,10 @@ extern int dh_txn_rollback(struct dh_ctx *ctx);
 #define ADD_IMM_SH     10
 #define ADD_SH_BIT     (1u << 22)
 #define ADD_SH_MASK    0x00C00000u
-#define ADD_OP_MASK    0x7F000000u
+/* ADD/SUB (immediate) class: bit[29] is the S flag, so it is excluded from
+ * the class mask; ADDS/SUBS must match the same encoders.  Bit[30] stays in
+ * the mask so SUB (0x51...) is not mistaken for ADD (0x11...). */
+#define ADD_OP_MASK    0x5F000000u
 #define ADD_OP         0x11000000u
 #define SUB_OP         0x51000000u
 
@@ -79,10 +86,12 @@ extern int dh_txn_rollback(struct dh_ctx *ctx);
 #define LDST_OP_MASK   0x3B000000u
 #define LDST_OP        0x39000000u
 
-/* LDR literal (W/X/SW): imm19 = bits[23:5], opc = bits[31:30]. */
+/* LDR literal: imm19 = bits[23:5], opc = bits[31:30], V = bit[26].  The class
+ * mask excludes V and opc so the SIMD literal forms are relocated too; a
+ * literal load copied verbatim would keep an imm19 relative to the old PC. */
 #define LDR_LIT_IMM_MASK 0x00FFFFE0u
 #define LDR_LIT_IMM_SH   5
-#define LDR_LIT_OP_MASK  0x3F000000u
+#define LDR_LIT_OP_MASK  0x3B000000u
 #define LDR_LIT_OP       0x18000000u
 
 /* B / BL: imm26 = bits[25:0]; BL has bit[31]=1, so the class mask must
@@ -98,17 +107,20 @@ extern int dh_txn_rollback(struct dh_ctx *ctx);
 #define BCOND_OP_MASK   0xFF000010u
 #define BCOND_OP        0x54000000u
 
-/* CBZ/CBNZ: imm19 = bits[23:5], op = bit[24], sf = bit[31]. */
+/* CBZ/CBNZ: imm19 = bits[23:5], op = bit[24], sf = bit[31].  The class mask
+ * must exclude bit[24], or CBNZ (0x35...) is decoded as CBZ (0x34...) and
+ * copied verbatim with a stale imm19. */
 #define CBZ_IMM_MASK    0x00FFFFE0u
 #define CBZ_IMM_SH      5
-#define CBZ_OP_MASK     0x7F000000u
+#define CBZ_OP_MASK     0x7E000000u
 #define CBZ_OP          0x34000000u
 
-/* TBZ/TBNZ: b40 = bits[23:19], imm14 = bits[18:5]. */
+/* TBZ/TBNZ: b40 = bits[23:19], imm14 = bits[18:5].  As with CBZ, bit[24]
+ * selects TBNZ and must stay out of the class mask. */
 #define TBZ_IMM14_MASK  0x0007FFE0u
 #define TBZ_IMM14_SH    5
 #define TBZ_B40_MASK    0x00F80000u
-#define TBZ_OP_MASK     0x7F000000u
+#define TBZ_OP_MASK     0x7E000000u
 #define TBZ_OP          0x36000000u
 
 /* Signed ranges.  ADRP's immediate is a 21-bit signed *page* delta, which
@@ -568,7 +580,7 @@ static int insn_pair_retarget(u32 adrp, u32 follow, u64 adrp_pc,
 
 	new_addr = new_base + (old_addr - old_base);
 	new_page = new_addr & ~0xFFFULL;
-	page_delta = (s64)((new_page - (adrp_pc & ~0xFFFULL)) >> 12);
+	page_delta = ((s64)new_page - (s64)(adrp_pc & ~0xFFFULL)) >> 12;
 	if (!fits(page_delta, ADRP_PAGE_LIMIT))
 		return DH_E_OPNOTSUPP;
 	off = new_addr - new_page;
@@ -722,37 +734,73 @@ int dh_scan_refs(struct dh_ctx *ctx, void *old_base, size_t old_len,
  * @lens: byte length of each buffer
  * @nr: number of sites
  *
- * One batch is capped at DH_MAX_BATCH (64) sites, matching the fixed undo log
- * budget.  Every site is recorded in the transaction before it is written; a
- * failing text_write() triggers dh_txn_rollback() so a partial patch never
- * stays behind.  dh_txn_rollback() is owned by dh_rw.c and supplied as an
- * extern here; the host harness provides a stub.
+ * The batch opens its own transaction: every site is recorded before it is
+ * written, and every write is read back and compared.  Any failure replays the
+ * undo log (reverse order) so the batch's own earlier writes are restored; a
+ * transaction that the caller already has open is rejected instead of being
+ * rolled back by the batch.  Per-site buffers are capped at one undo entry
+ * (sizeof(struct dh_undo_ent.orig) == 256 bytes), and one transaction can hold
+ * DH_UNDO_SLOTS sites, so the effective batch limit is the smaller of
+ * DH_MAX_BATCH and DH_UNDO_SLOTS.
  *
- * Return: %DH_OK, %DH_E_INVAL for bad arguments, %DH_E_NOSPC when @nr
- * exceeds the batch cap, or the backend's error with rollback already done.
+ * A failed rollback is returned instead of the original write error: the
+ * caller must not assume the text was restored.
+ *
+ * Return: %DH_OK, %DH_E_INVAL for bad arguments, %DH_E_BUSY when an outer
+ * transaction is open, %DH_E_NOSPC when @nr or a per-site length exceeds the
+ * fixed undo budget, or the backend/transaction error with rollback attempted.
  */
 int dh_patch_text_batch(struct dh_ctx *ctx, void **addrs, u32 **insns,
 			size_t *lens, size_t nr)
 {
 	size_t i;
-	int ret;
+	int ret, rb;
 
-	if (!ctx || !ctx->be || !addrs || !insns || !lens || nr == 0)
+	if (!ctx || !ctx->initialized || !ctx->be || !addrs || !insns ||
+	    !lens || nr == 0)
 		return DH_E_INVAL;
-	if (nr > DH_MAX_BATCH)
-		return DH_E_NOSPC;
 	if (!ctx->be->text_write)
 		return DH_E_OPNOTSUPP;
+	/* Never clobber a caller-owned transaction. */
+	if (ctx->txn.active)
+		return DH_E_BUSY;
+	if (nr > DH_MAX_BATCH || nr > DH_UNDO_SLOTS)
+		return DH_E_NOSPC;
 	for (i = 0; i < nr; i++) {
 		if (!addrs[i] || !insns[i] || lens[i] == 0 ||
 		    (lens[i] & 3) != 0)
 			return DH_E_INVAL;
+		if (lens[i] > sizeof(ctx->txn.undo[0].orig))
+			return DH_E_NOSPC;
+	}
+
+	ret = dh_txn_begin(ctx);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < nr; i++) {
+		unsigned char verify[sizeof(ctx->txn.undo[0].orig)];
+
+		ret = dh_txn_record(ctx, addrs[i], lens[i], DH_ROUTE_ALIAS);
+		if (ret)
+			goto rollback;
 		ret = ctx->be->text_write(addrs[i], insns[i], lens[i],
 					  DH_ROUTE_ALIAS);
-		if (ret != DH_OK) {
-			(void)dh_txn_rollback(ctx);
-			return ret;
+		if (ret)
+			goto rollback;
+		if (ctx->be->icache_flush)
+			ctx->be->icache_flush(addrs[i], lens[i]);
+		ret = dh_read(ctx, addrs[i], verify, lens[i]);
+		if (ret)
+			goto rollback;
+		if (memcmp(verify, insns[i], lens[i]) != 0) {
+			ret = DH_E_VERIFY;
+			goto rollback;
 		}
 	}
-	return DH_OK;
+	return dh_txn_commit(ctx);
+
+rollback:
+	rb = dh_txn_rollback(ctx);
+	return rb != DH_OK ? rb : ret;
 }

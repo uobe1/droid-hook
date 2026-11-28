@@ -27,6 +27,7 @@ DH_E_BUSY = -16
 DH_E_NOENT = -2
 DH_E_OPNOTSUPP = -95
 DH_E_QUIESCE = -1001
+DH_E_VERIFY = -1000
 DH_KEY_LEN = 48
 DH_ORIGIN_INSNS = 4
 DH_JUMP_INSNS = 4
@@ -116,6 +117,16 @@ class DhHookTest(unittest.TestCase):
         lib.harness_txn_rollbacks.restype = ctypes.c_int
         lib.harness_fail_text_write.argtypes = [ctypes.c_int]
         lib.harness_fail_text_write.restype = None
+        lib.harness_lie_text_write.argtypes = [ctypes.c_int]
+        lib.harness_lie_text_write.restype = None
+        lib.harness_partial_text_write.argtypes = [ctypes.c_int]
+        lib.harness_partial_text_write.restype = None
+        lib.harness_fail_txn_rollback.argtypes = [ctypes.c_int]
+        lib.harness_fail_txn_rollback.restype = None
+        lib.harness_text_write_quiesce.restype = ctypes.c_int
+        lib.harness_install_at.argtypes = [ctypes.c_char_p, ctypes.c_void_p,
+                                           ctypes.c_void_p]
+        lib.harness_install_at.restype = HookResult
         lib.harness_shadow_get.argtypes = [ctypes.c_void_p,
                                            ctypes.c_uint32,
                                            ctypes.c_size_t]
@@ -283,6 +294,83 @@ class DhHookTest(unittest.TestCase):
         self.assertEqual(self.lib.harness_text_word(0), 0x1000,
                          'original bytes must be restored')
 
+    def test_install_write_and_verify_run_inside_one_quiesce(self):
+        r, _ = self.install()
+        self.assertEqual(r.ret, DH_OK)
+        self.assertEqual(self.lib.harness_text_write_quiesce(), 1,
+                         'entry write must run inside the quiesce window')
+        self.assertEqual(self.lib.harness_quiesce_depth(), 0,
+                         'quiesce must be balanced after success')
+        self.assertEqual(self.lib.harness_quiesce_calls(), 1)
+        self.assertEqual(self.lib.harness_txn_rollbacks(), 0)
+
+    def test_install_rejects_a_text_write_that_did_not_land(self):
+        """A backend that reports success without patching the entry must not
+        leave a hook marked installed."""
+        self.lib.harness_lie_text_write(1)
+        r, _ = self.install()
+        self.assertEqual(r.ret, DH_E_VERIFY)
+        self.assertEqual(self.lib.harness_registry_count(), 0)
+        self.assertEqual(self.lib.harness_live_tramps(), 0)
+        self.assertEqual(self.lib.harness_text_word(0), 0x1000,
+                         'the target must be untouched')
+        self.assertEqual(self.lib.harness_text_word(1), 0x1001)
+
+    def test_install_rollback_failure_does_not_free_live_trampoline(self):
+        """If the entry partially landed and the rollback cannot restore it,
+        the text may still jump into the trampoline.  install() must return the
+        rollback error, keep the registry claim and leak both allocations
+        rather than free memory the kernel text still uses."""
+        self.lib.harness_partial_text_write(1)
+        self.lib.harness_fail_txn_rollback(DH_E_VERIFY)
+        r, _ = self.install()
+        self.assertEqual(r.ret, DH_E_VERIFY,
+                         'the rollback error must be returned')
+        self.assertEqual(self.lib.harness_registry_count(), 1,
+                         'claim kept deliberately')
+        self.assertEqual(self.lib.harness_live_tramps(), 1,
+                         'trampoline leaked deliberately')
+        self.assertEqual(self.lib.harness_free_count(), 0,
+                         'neither trampoline nor chain may be freed')
+        self.assertNotEqual(self.lib.harness_text_word(0), 0x1000,
+                            'the half-written entry must still be present')
+
+    def test_registry_full_fails_before_any_text_write(self):
+        """The registry claim must precede the text write.
+
+        dh_txn_commit() discards the undo log, so a claim failure after the
+        commit could not restore the entry; the failure path would then free a
+        trampoline the kernel text still jumps to.
+        """
+        base = self.lib.harness_text()
+        self._filled = []
+        for i in range(16):
+            r = self.lib.harness_install_at(
+                b'k%02d' % i, ctypes.c_void_p(base + i * 16),
+                ctypes.c_void_p(0xDEADBEEF))
+            self.assertEqual(r.ret, DH_OK)
+            self._filled.append(r)
+        writes = self.lib.harness_text_writes()
+        r = self.lib.harness_install_at(
+            b'overflow', ctypes.c_void_p(base + 16 * 16),
+            ctypes.c_void_p(0xDEADBEEF))
+        self.assertEqual(r.ret, DH_E_NOSPC)
+        self.assertEqual(self.lib.harness_text_writes(), writes,
+                         'a failed claim must not reach the text')
+        self.assertEqual(self.lib.harness_registry_count(), 16)
+
+    def test_uninstall_verifies_the_restore_before_freeing(self):
+        """A backend that reports success without restoring must not free."""
+        r, h = self.install()
+        self.assertEqual(r.ret, DH_OK)
+        self.lib.harness_lie_text_write(1)
+        ret = self.lib.harness_uninstall(h)
+        self.assertEqual(ret, DH_E_VERIFY)
+        self.assertEqual(h.contents.installed, 1,
+                         'a failed restore must keep the hook installed')
+        self.assertEqual(self.lib.harness_live_tramps(), 1)
+        self.lib.harness_lie_text_write(0)
+
     # ---- chain ----
 
     def test_before_order_after_reverse_and_skip_origin(self):
@@ -340,12 +428,13 @@ class DhHookTest(unittest.TestCase):
     def test_uninstall_restores_original_and_quiesces(self):
         r, h = self.install()
         self.assertEqual(r.ret, DH_OK)
+        before = self.lib.harness_quiesce_calls()
         ret = self.lib.harness_uninstall(h)
         self.assertEqual(ret, DH_OK)
         self.assertEqual(self.lib.harness_text_word(0), 0x1000,
                          'original instruction restored')
-        self.assertEqual(self.lib.harness_quiesce_calls(), 1,
-                         'one quiesce window')
+        self.assertEqual(self.lib.harness_quiesce_calls(), before + 1,
+                         'one quiesce window for uninstall')
         self.assertEqual(self.lib.harness_quiesce_depth(), 0,
                          'quiesce must be balanced')
         self.assertEqual(self.lib.harness_registry_count(), 0)

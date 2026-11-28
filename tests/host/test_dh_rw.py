@@ -80,6 +80,8 @@ class DhRwTest(unittest.TestCase):
         L.dh_harness_fail_rw.restype = None
         L.dh_harness_fail_ro_write.argtypes = [ctypes.c_int]
         L.dh_harness_fail_ro_write.restype = None
+        L.dh_harness_fail_rw_on_call.argtypes = [ctypes.c_int, ctypes.c_int]
+        L.dh_harness_fail_rw_on_call.restype = None
         L.dh_harness_read_byte.argtypes = [ctypes.c_ulong]
         L.dh_harness_read_byte.restype = ctypes.c_ubyte
         L.dh_harness_write_byte.argtypes = [ctypes.c_ulong, ctypes.c_ubyte]
@@ -211,6 +213,49 @@ class DhRwTest(unittest.TestCase):
         ret, got = self._read(400, 2)
         self.assertEqual(ret, DH_OK)
         self.assertEqual(got, b'\xAA\xBB')
+
+    def test_07b_write_error_marks_txn_failed(self):
+        """A backend rw() error inside dh_write() must poison the txn.
+
+        commit() only rolls back when txn.failed is set; a write that returns
+        an errno without setting it would let commit discard the undo log and
+        report success with a partial mutation.
+        """
+        self.assertEqual(self._write(700, b'\xAA\xBB'), DH_OK)
+        self.assertEqual(self.lib.dh_harness_txn_begin(), DH_OK)
+        self.assertEqual(self.lib.dh_harness_txn_record(700, 2,
+                                                        DH_ROUTE_ALIAS), DH_OK)
+        # Snapshot already done; the next rw() call is the write itself.
+        self.lib.dh_harness_fail_rw_on_call(1, DH_E_INVAL)
+        self.assertEqual(self._write(700, b'\xCC\xDD'), DH_E_INVAL)
+        self.assertEqual(self.lib.dh_harness_txn_failed(), 1)
+        self.lib.dh_harness_fail_rw_on_call(0, 0)
+        self.assertEqual(self.lib.dh_harness_txn_commit(), DH_E_VERIFY)
+        self.assertEqual(self.lib.dh_harness_txn_active(), 0)
+        ret, got = self._read(700, 2)
+        self.assertEqual(ret, DH_OK)
+        self.assertEqual(got, b'\xAA\xBB')
+
+    def test_07c_verify_read_error_marks_txn_failed(self):
+        """The read-back inside dh_write() is a second failure point.
+
+        The write lands, then the verification read fails.  The txn must still
+        be marked failed so commit restores the recorded bytes.
+        """
+        self.assertEqual(self._write(704, b'\x11\x22'), DH_OK)
+        self.assertEqual(self.lib.dh_harness_txn_begin(), DH_OK)
+        self.assertEqual(self.lib.dh_harness_txn_record(704, 2,
+                                                        DH_ROUTE_ALIAS), DH_OK)
+        # Call 1 is the write; call 2 is the read-back verification.
+        self.lib.dh_harness_fail_rw_on_call(2, DH_E_INVAL)
+        self.assertEqual(self._write(704, b'\x33\x44'), DH_E_INVAL)
+        self.assertEqual(self.lib.dh_harness_txn_failed(), 1)
+        self.lib.dh_harness_fail_rw_on_call(0, 0)
+        self.assertEqual(self.lib.dh_harness_txn_commit(), DH_E_VERIFY)
+        self.assertEqual(self.lib.dh_harness_txn_active(), 0)
+        ret, got = self._read(704, 2)
+        self.assertEqual(ret, DH_OK)
+        self.assertEqual(got, b'\x11\x22')
 
     def test_08_ctx_fini_auto_rolls_back_open_transaction(self):
         self.assertEqual(self._write(512, b'\x11\x22'), DH_OK)

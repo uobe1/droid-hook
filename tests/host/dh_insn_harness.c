@@ -33,14 +33,71 @@ int dh_ins_test_pair_retarget(u32 adrp, u32 follow, u64 adrp_pc,
 			      u32 *out_adrp, u32 *out_follow);
 #endif
 
-/* ---- cross-TU stub owned by dh_rw.c in a real build ---- */
+/* ---- cross-TU stubs owned by dh_txn.c / dh_rw.c in a real build ---- */
 
 static int g_rollback_calls;
 
+int dh_txn_begin(struct dh_ctx *ctx)
+{
+	if (!ctx)
+		return DH_E_INVAL;
+	ctx->txn.active = 1;
+	ctx->txn.n = 0;
+	ctx->txn.failed = 0;
+	return DH_OK;
+}
+
+int dh_txn_record(struct dh_ctx *ctx, void *addr, size_t len,
+		  enum dh_route route)
+{
+	struct dh_undo_ent *e;
+
+	if (!ctx || !ctx->txn.active || !addr || len == 0 || len > 256)
+		return DH_E_INVAL;
+	if (ctx->txn.n >= DH_UNDO_SLOTS)
+		return DH_E_NOSPC;
+	e = &ctx->txn.undo[ctx->txn.n++];
+	e->addr = addr;
+	e->len = len;
+	e->route = route;
+	e->used = 1;
+	memcpy(e->orig, addr, len);
+	return DH_OK;
+}
+
+int dh_txn_commit(struct dh_ctx *ctx)
+{
+	if (!ctx || !ctx->txn.active)
+		return DH_E_INVAL;
+	ctx->txn.active = 0;
+	ctx->txn.n = 0;
+	return DH_OK;
+}
+
 int dh_txn_rollback(struct dh_ctx *ctx)
 {
-	(void)ctx;
+	u32 i;
+
+	if (!ctx)
+		return DH_E_INVAL;
 	g_rollback_calls++;
+	for (i = ctx->txn.n; i > 0; i--) {
+		struct dh_undo_ent *e = &ctx->txn.undo[i - 1];
+
+		if (e->used && e->addr)
+			memcpy(e->addr, e->orig, e->len);
+	}
+	ctx->txn.active = 0;
+	ctx->txn.n = 0;
+	ctx->txn.failed = 1;
+	return DH_OK;
+}
+
+int dh_read(struct dh_ctx *ctx, void *addr, void *dst, size_t len)
+{
+	if (!ctx || !addr || !dst || !len)
+		return DH_E_INVAL;
+	memcpy(dst, addr, len);
 	return DH_OK;
 }
 
@@ -52,6 +109,7 @@ static void *g_probe_stext;
 static void *g_probe_etext;
 static int g_text_writes;
 static int g_fail_at = -1;
+static int g_text_lie;
 
 static void *fake_probe(const char *name)
 {
@@ -68,6 +126,12 @@ static int fake_text_write(void *addr, const void *src, size_t len,
 	(void)route;
 	if (g_fail_at >= 0 && g_text_writes == g_fail_at)
 		return DH_E_VERIFY;
+	if (g_text_lie) {
+		/* Report success without writing, so the per-site read-back in
+		 * dh_patch_text_batch() must catch it. */
+		g_text_writes++;
+		return DH_OK;
+	}
 	if (len)
 		memcpy(addr, src, len);
 	g_text_writes++;
@@ -121,6 +185,26 @@ static u32 mk_sub(u32 imm12, u32 sh, u32 rn, u32 rd)
 	return 0x51000000u | (sh << 22) | (imm12 << 10) | (rn << 5) | rd;
 }
 
+/* ADDS / SUBS (immediate), 64-bit: bit[30]=op, bit[29]=S. */
+static u32 mk_adds(u32 imm12, u32 sh, u32 rn, u32 rd)
+{
+	return 0xB1000000u | (sh << 22) | (imm12 << 10) | (rn << 5) | rd;
+}
+
+static u32 mk_subs(u32 imm12, u32 sh, u32 rn, u32 rd)
+{
+	return 0xF1000000u | (sh << 22) | (imm12 << 10) | (rn << 5) | rd;
+}
+
+/* Sign-extend an n-bit field already shifted down to bit 0. */
+static s64 sext_field(u32 field, unsigned int bits)
+{
+	s64 v = (s64)field;
+	s64 sign = (s64)1 << (bits - 1);
+
+	return (v & (sign - 1)) - (v & sign);
+}
+
 static void emit(const char *sub)
 {
 	memset(g_text, 0, sizeof(g_text));
@@ -129,6 +213,7 @@ static void emit(const char *sub)
 	g_rollback_calls = 0;
 	g_text_writes = 0;
 	g_fail_at = -1;
+	g_text_lie = 0;
 	memset(&g_ctx, 0, sizeof(g_ctx));
 	g_ctx.be = &g_be;
 	g_ctx.initialized = 1;
@@ -382,6 +467,57 @@ int main(int argc, char **argv)
 		print_int("r_fail", r);
 		print_int("rollback_calls", g_rollback_calls);
 		print_int("writes_on_fail", g_text_writes);
+		/* Site 0 was written before site 1 failed; its undo entry must
+		 * have restored it to the emit() pattern (0x1000, 0x1001). */
+		print_u32("w0_after_fail", g_text[0]);
+		print_u32("w1_after_fail", g_text[1]);
+		print_int("txn_active_after_fail", g_ctx.txn.active);
+		print_int("txn_n_after_fail", (int)g_ctx.txn.n);
+		return 0;
+	}
+
+	if (strcmp(cmd, "batch_verify") == 0) {
+		/* text_write() reports success but leaves the text untouched.
+		 * The per-site read-back must turn that into DH_E_VERIFY, not a
+		 * silent success. */
+		void *addrs[1];
+		u32 buf[2] = { 0xDEADBEEFu, 0xFEEDFACEu };
+		u32 *insns[1] = { buf };
+		size_t lens[1] = { 8 };
+		int r;
+
+		emit("batch_verify");
+		addrs[0] = &g_text[0];
+		g_text_lie = 1;
+		r = dh_patch_text_batch(&g_ctx, addrs, insns, lens, 1);
+		g_text_lie = 0;
+		print_int("r", r);
+		print_int("verify", DH_E_VERIFY);
+		print_int("writes", g_text_writes);
+		print_int("rollback_calls", g_rollback_calls);
+		print_u32("w0", g_text[0]);
+		return 0;
+	}
+
+	if (strcmp(cmd, "batch_in_txn") == 0) {
+		/* A batch must reject a caller-owned open transaction instead of
+		 * recording into it or rolling it back. */
+		void *addrs[1];
+		u32 buf[2] = { 0xABCDEF01u, 0x12345678u };
+		u32 *insns[1] = { buf };
+		size_t lens[1] = { 8 };
+		int r, rb;
+
+		emit("batch_in_txn");
+		addrs[0] = &g_text[0];
+		rb = dh_txn_begin(&g_ctx);
+		r = dh_patch_text_batch(&g_ctx, addrs, insns, lens, 1);
+		print_int("begin_ret", rb);
+		print_int("r", r);
+		print_int("writes", g_text_writes);
+		print_int("rollback_calls", g_rollback_calls);
+		print_int("txn_active", g_ctx.txn.active);
+		print_int("busy", DH_E_BUSY);
 		return 0;
 	}
 
@@ -480,6 +616,64 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
+	if (strcmp(cmd, "class_variants") == 0) {
+		/* Each of these is a known PC-relative class that must be
+		 * re-encoded, not copied verbatim.  src_pc 0x2000 with imm
+		 * -64 words targets 0x1F00; moving to dst_pc 0x1000 must keep
+		 * that absolute target, so the imm field has to change.  The
+		 * keep_mask/keep_expect pair pins the bits that must survive:
+		 * CBNZ/TBNZ bit[24], TBZ b40, and the SIMD literal's opc[31:30]
+		 * and V[26]. */
+		const struct {
+			const char *name;
+			u32 base;
+			u32 imm_mask;
+			unsigned int imm_bits;
+			u32 keep_mask;
+			u32 keep_expect;
+			s64 imm;
+		} cases[] = {
+			{ "cbz", 0x34000000u, 0x00FFFFE0u, 19, 0xFF00001Fu,
+			  0x34000000u, -64 },
+			{ "cbnz", 0x35000000u, 0x00FFFFE0u, 19, 0xFF00001Fu,
+			  0x35000000u, -64 },
+			{ "tbz", 0x36000000u, 0x0007FFE0u, 14, 0xFFF8001Fu,
+			  0x36000000u, -64 },
+			{ "tbnz", 0x37000000u, 0x0007FFE0u, 14, 0xFFF8001Fu,
+			  0x37000000u, -64 },
+			{ "ldr_simd_lit", 0x5C000000u, 0x00FFFFE0u, 19,
+			  0xFF00001Fu, 0x5C000000u, -64 },
+		};
+		const u64 spc = 0x2000ULL, dpc = 0x1000ULL;
+		size_t i;
+
+		for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+			u32 insn = cases[i].base |
+				((((u32)cases[i].imm) << 5) &
+				 cases[i].imm_mask);
+			u32 dst = 0;
+			int ret = dh_insn_relocate(&insn, &dst,
+						   (void *)(uintptr_t)spc,
+						   (void *)(uintptr_t)dpc, 1);
+			s64 new_imm = sext_field((dst & cases[i].imm_mask) >> 5,
+						 cases[i].imm_bits);
+			u64 target = dpc + (u64)new_imm * 4;
+			u64 expect = spc + (u64)cases[i].imm * 4;
+
+			printf("%s_ret=%d\n", cases[i].name, ret);
+			printf("%s_dst=0x%08" PRIx32 "\n", cases[i].name, dst);
+			printf("%s_changed=%d\n", cases[i].name, dst != insn);
+			printf("%s_class_ok=%d\n", cases[i].name,
+			       (dst & cases[i].keep_mask) ==
+			       cases[i].keep_expect);
+			printf("%s_target=0x%016" PRIx64 "\n", cases[i].name,
+			       target);
+			printf("%s_expect=0x%016" PRIx64 "\n", cases[i].name,
+			       expect);
+		}
+		return 0;
+	}
+
 #ifdef DH_INS_TEST_SEAM
 	if (strcmp(cmd, "pair_public") == 0) {
 		u32 out[2] = { 0, 0 };
@@ -554,6 +748,22 @@ int main(int argc, char **argv)
 			{ "sub_follower", mk_adrp(0x10000, 0),
 			  mk_sub(0x20, 0, 1, 2), 0x20000000ULL,
 			  0x30000000ULL },
+			/* ADDS shares ADD (immediate)'s imm12 field; only the S
+			 * bit[29] differs.  It must be retargeted like ADD. */
+			{ "adds_follower", mk_adrp(0x10000, 0),
+			  mk_adds(0x20, 0, 1, 2), 0x20000000ULL,
+			  0x30000000ULL },
+			/* SUBS is still a subtract: no unsigned imm12 can reach
+			 * an arbitrary lower in-page offset, so it is refused. */
+			{ "subs_follower", mk_adrp(0x10000, 0),
+			  mk_subs(0x20, 0, 1, 2), 0x20000000ULL,
+			  0x30000000ULL },
+			/* Backward move: the new page is below both the old array
+			 * and the ADRP's own page, so the ADRP delta is negative.
+			 * It is in range and must encode, not be refused. */
+			{ "backward", mk_adrp(0x10000, 0),
+			  mk_add(0x20, 0, 1, 2), 0x20000000ULL,
+			  0x0F000000ULL },
 			{ "bad_adrp", 0xD503201Fu, mk_add(0x20, 0, 1, 2),
 			  0x20000000ULL, 0x30000000ULL },
 		};

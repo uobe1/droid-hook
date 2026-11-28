@@ -339,6 +339,27 @@ class DhInsnTest(unittest.TestCase):
         self.assertEqual(d['r_fail'], -1000)   # DH_E_VERIFY from backend
         self.assertEqual(d['rollback_calls'], 1)
         self.assertEqual(d['writes_on_fail'], 1)  # stopped at first failure
+        # The batch's own first write must be undone, and the transaction it
+        # opened must be closed, leaving no state for a later call.  emit()
+        # zeroes the text buffer, so the recorded origin is 0.
+        self.assertEqual(d['w0_after_fail'], 0)
+        self.assertEqual(d['w1_after_fail'], 0)
+        self.assertEqual(d['txn_active_after_fail'], 0)
+        self.assertEqual(d['txn_n_after_fail'], 0)
+        # A backend that says "written" but did not write must be caught by
+        # the per-site read-back, and the batch must roll back its txn.
+        v = run('batch_verify')
+        self.assertEqual(v['r'], -1000)          # DH_E_VERIFY
+        self.assertEqual(v['writes'], 1)
+        self.assertEqual(v['rollback_calls'], 1)
+        self.assertEqual(v['w0'], 0)
+        # A caller-owned open transaction is rejected, not clobbered.
+        b = run('batch_in_txn')
+        self.assertEqual(b['begin_ret'], 0)
+        self.assertEqual(b['r'], -16)            # DH_E_BUSY
+        self.assertEqual(b['writes'], 0)
+        self.assertEqual(b['rollback_calls'], 0)
+        self.assertEqual(b['txn_active'], 1)
         c = run('batch_cap')
         self.assertEqual(c['nospc'], -28)        # DH_E_NOSPC
         self.assertEqual(c['r_cap'], -28)
@@ -433,9 +454,34 @@ class DhInsnTest(unittest.TestCase):
         # Follower classes that are not an address materialisation.
         self.assertEqual(d['case_nop_follower_ret'], -95)
         self.assertEqual(d['case_sub_follower_ret'], -95)
+        # SUBS is still subtract-like: imm12 cannot reach an arbitrary lower
+        # in-page offset, so it is refused rather than mis-encoded.
+        self.assertEqual(d['case_subs_follower_ret'], -95)
         # A first word that is not ADRP.
         self.assertEqual(d['case_bad_adrp_ret'], -22)
         self.assertEqual(d['r_null_out'], -22)
+
+    def test_pair_adds_follower_is_retargeted(self):
+        """ADDS differs from ADD only in S[29]; it is the same encoder class."""
+        d = run('pair')
+        self.assertEqual(d['case_adds_follower_ret'], 0)
+        self.assertEqual(d['case_adds_follower_pages'], 0x20000)
+        self.assertEqual(d['case_adds_follower_imm12'], 0x20)
+        # S bit[29] survives: 0xB1008022, not 0x91008022.
+        self.assertEqual(d['case_adds_follower_dst_follow'], 0xB1008022)
+        self.assert_only_imm_changed(d, 'adds_follower', self.ADD_IMM)
+
+    def test_pair_backward_move_encodes_negative_page_delta(self):
+        """A move to a lower page produces a negative ADRP delta.
+
+        This must encode (delta -0x1000 pages), not be rejected as if the
+        unsigned subtraction had wrapped into a huge positive value.
+        """
+        d = run('pair')
+        self.assertEqual(d['case_backward_ret'], 0)
+        self.assertEqual(d['case_backward_pages'], -0x1000)
+        self.assertEqual(d['case_backward_imm12'], 0x20)
+        self.assertEqual(d['case_backward_dst_follow'], 0x91008022)
 
     # ---- ADRP +-4 GiB boundary (both edges, not just "far away") ----
 
@@ -456,6 +502,28 @@ class DhInsnTest(unittest.TestCase):
         self.assertEqual(d['target'], d['expect_target'])
         self.assertEqual(d['target'], 0x1F00)
         self.assertEqual(d['word_delta'], 960)
+
+    # ---- branch/literal class variants must be relocated, not copied ----
+
+    def test_class_variants_are_relocated_not_copied(self):
+        """CBNZ/TBNZ and SIMD literals are PC-relative just like their
+        non-NZ/non-SIMD forms.
+
+        A class mask that keeps the op/V bits out of the compare must still
+        select the class; if it does not, the word falls through to the
+        verbatim-copy path and keeps a stale imm relative to the old PC.  The
+        move from 0x2000 to 0x1000 forces the imm to change, and the target
+        must stay 0x1F00.
+        """
+        d = run('class_variants')
+        for name in ('cbz', 'cbnz', 'tbz', 'tbnz', 'ldr_simd_lit'):
+            self.assertEqual(d[f'{name}_ret'], 0, name)
+            self.assertEqual(d[f'{name}_changed'], 1,
+                             f'{name} was copied verbatim')
+            self.assertEqual(d[f'{name}_class_ok'], 1,
+                             f'{name} lost its class/V/op bits')
+            self.assertEqual(d[f'{name}_expect'], 0x1F00, name)
+            self.assertEqual(d[f'{name}_target'], d[f'{name}_expect'], name)
 
     # ---- scan boundaries and fail-closed preflight ----
 
